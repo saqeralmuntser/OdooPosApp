@@ -374,7 +374,7 @@ class LocalStorage {
       orderBy: 'name ASC',
     );
     
-    return results.map((row) => jsonDecode(row['data'] as String)).toList();
+    return results.map((row) => jsonDecode(row['data'] as String) as Map<String, dynamic>).toList();
   }
 
   /// Get product by ID
@@ -445,7 +445,7 @@ class LocalStorage {
       orderBy: 'sequence ASC, name ASC',
     );
     
-    return results.map((row) => jsonDecode(row['data'] as String)).toList();
+    return results.map((row) => jsonDecode(row['data'] as String) as Map<String, dynamic>).toList();
   }
 
   // ===== Database Methods for Customers =====
@@ -495,7 +495,7 @@ class LocalStorage {
       orderBy: 'name ASC',
     );
     
-    return results.map((row) => jsonDecode(row['data'] as String)).toList();
+    return results.map((row) => jsonDecode(row['data'] as String) as Map<String, dynamic>).toList();
   }
 
   // ===== Database Methods for Orders =====
@@ -576,7 +576,7 @@ class LocalStorage {
     
     return results.map((row) => {
       'local_id': row['id'],
-      ...jsonDecode(row['data'] as String),
+      ...jsonDecode(row['data'] as String) as Map<String, dynamic>,
     }).toList();
   }
 
@@ -629,7 +629,7 @@ class LocalStorage {
     
     return results.map((row) => {
       'local_id': row['id'],
-      ...jsonDecode(row['data'] as String),
+      ...jsonDecode(row['data'] as String) as Map<String, dynamic>,
     }).toList();
   }
 
@@ -668,7 +668,7 @@ class LocalStorage {
     
     return results.map((row) => {
       'local_id': row['id'],
-      ...jsonDecode(row['data'] as String),
+      ...jsonDecode(row['data'] as String) as Map<String, dynamic>,
     }).toList();
   }
 

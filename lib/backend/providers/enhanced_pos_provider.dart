@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../services/pos_backend_service.dart';
 import '../services/session_manager.dart';
-import '../services/order_manager.dart';
 import '../models/pos_config.dart';
 import '../models/pos_session.dart';
 import '../models/product_product.dart';

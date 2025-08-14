@@ -15,7 +15,6 @@ class SessionManager {
 
   final OdooApiClient _apiClient = OdooApiClient();
   final LocalStorage _localStorage = LocalStorage();
-  final _uuid = const Uuid();
 
   POSSession? _currentSession;
   POSConfig? _currentConfig;

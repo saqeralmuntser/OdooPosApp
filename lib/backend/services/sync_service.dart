@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 import '../api/odoo_api_client.dart';
 import '../storage/local_storage.dart';
 
@@ -22,7 +21,6 @@ class SyncService {
   // Sync configuration
   static const Duration _syncInterval = Duration(minutes: 5);
   static const int _maxRetryAttempts = 3;
-  static const Duration _retryDelay = Duration(seconds: 30);
 
   /// Sync status stream
   Stream<SyncStatus> get syncStatusStream => _syncStatusController.stream;

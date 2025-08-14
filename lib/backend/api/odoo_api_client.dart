@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
