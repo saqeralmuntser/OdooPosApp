@@ -1,0 +1,72 @@
+{
+    "popup_components": {
+      "product_information_popup": {
+        "title": "Product information",
+        "style": {
+          "background_color": "#FFFFFF",
+          "box_shadow": "subtle",
+          "border_radius": "10px"
+        },
+        "sections": [
+          {
+            "title": "Inventory",
+            "details": {
+              "label": "My Company :",
+              "units_available": "0 Units available.",
+              "forecasted": "0 forecasted"
+            }
+          },
+          {
+            "title": "Financials",
+            "details": {
+              "price_excl_tax": "10.00 SR",
+              "cost": "10.35 SR",
+              "margin": "-0.35 SR (-3.5%)"
+            }
+          },
+          {
+            "title": "Order",
+            "details": {
+              "total_price_excl_tax": "0.00 SR",
+              "total_cost": "0.00 SR",
+              "total_margin": "0.00 SR (0%)"
+            }
+          }
+        ],
+        "buttons": [
+          {"name": "Ok", "style": "primary", "color": "#5D377B"},
+          {"name": "Edit", "style": "secondary"}
+        ]
+      },
+      "attribute_selection_popup": {
+        "title": "Attribute selection",
+        "style": {
+          "background_color": "#FFFFFF",
+          "box_shadow": "subtle",
+          "border_radius": "10px"
+        },
+        "header_section": {
+          "product_name": "Bacon Burger",
+          "price": "15.50 SR",
+          "vat_info": "VAT: 15% (= 2.02 SR)",
+          "background_color": "#EAF4F7"
+        },
+        "attribute_groups": [
+          {
+            "group_name": "Sides",
+            "options": [
+              {"name": "Belgian fresh homemade fries", "is_selected": true},
+              {"name": "Sweet potato fries", "is_selected": false},
+              {"name": "Smashed sweet potatoes", "is_selected": false},
+              {"name": "Potatoes with thyme", "is_selected": false},
+              {"name": "Grilled vegetables", "is_selected": false}
+            ]
+          }
+        ],
+        "buttons": [
+          {"name": "Add", "style": "primary", "color": "#5D377B"},
+          {"name": "Discard", "style": "secondary"}
+        ]
+      }
+    }
+  }

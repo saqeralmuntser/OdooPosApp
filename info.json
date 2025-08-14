@@ -1,0 +1,231 @@
+{
+    "point_of_sale_system": {
+      "name": "Point of Sale",
+      "description": "JSON representation of a Point of Sale system based on provided screenshots.",
+      "style_and_theme": {
+        "primary_color": "#5D377B",
+        "secondary_color": "#A0A0A0",
+        "background_color": "#F5F5F5",
+        "font": "Odoo's default font (similar to Lato or Open Sans)",
+        "ui_elements": {
+          "buttons": {
+            "shape": "rounded corners",
+            "color": "#5D377B"
+          },
+          "fields": {
+            "shape": "rounded corners",
+            "border_color": "#D3D3D3"
+          },
+          "cards": {
+            "shape": "rounded corners",
+            "box_shadow": "subtle"
+          }
+        }
+      },
+      "components": {
+        "login_screen": {
+          "logo_placeholder": "Your logo",
+          "fields": [
+            {"name": "Email", "type": "email", "placeholder": "Email"},
+            {"name": "Password", "type": "password", "placeholder": "Password"}
+          ],
+          "buttons": [
+            {"name": "Log in", "color": "#5D377B"},
+            {"name": "Log in as superuser", "link": true},
+            {"name": "Don't have an account?", "link": true}
+          ]
+        },
+        "pos_dashboard": [
+          {
+            "name": "Restaurant",
+            "status": "Opening Control",
+            "closing_date": "07/07/2025",
+            "closing_balance": "0.00 SR",
+            "button": {"name": "Open Register", "color": "#5D377B"}
+          },
+          {
+            "name": "shop1",
+            "status": "Closing",
+            "closing_date": "08/12/2025",
+            "button": {"name": "Open Register", "color": "#5D377B"}
+          }
+        ],
+        "main_screen_pos": {
+          "header": {
+            "logo": "odoo",
+            "table_number_display": "801",
+            "user_display": "Administrator",
+            "search_bar": "Search products..."
+          },
+          "product_grid": {
+            "categories": [
+              {"name": "Food"},
+              {"name": "Drinks"},
+              {"name": "الدجاج"}
+            ],
+            "products": [
+              {
+                "name": "Green Tea",
+                "price": "4.70 SR",
+                "image": "image_of_green_tea.png"
+              },
+              {
+                "name": "Spicy Tuna Sandwich",
+                "price": "unknown",
+                "image": "image_of_sandwich.png"
+              },
+              {
+                "name": "Bacon Burger",
+                "price": "unknown",
+                "image": "image_of_burger.png"
+              },
+              {
+                "name": "Burger Menu Combo",
+                "price": "unknown",
+                "image": "image_of_burger_combo.png"
+              },
+              {
+                "name": "Coca-Cola",
+                "price": "unknown",
+                "image": "image_of_coca_cola.png"
+              },
+              {
+                "name": "mandi",
+                "price": "unknown",
+                "image": "image_of_mandi.png"
+              }
+            ]
+          },
+          "order_summary": {
+            "items": [
+              {
+                "product_name": "Green Tea",
+                "quantity": 1.00,
+                "unit_price": "4.70 SR / Units"
+              }
+            ],
+            "taxes": "0.61 SR",
+            "total": "4.70 SR",
+            "actions": [
+              "Customer",
+              "Kitchen Note",
+              "Actions"
+            ]
+          },
+          "numpad": {
+            "buttons": [
+              "1", "2", "3", "+10",
+              "4", "5", "6", "+20",
+              "7", "8", "9", "+50",
+              "+/-", "0", ".", "-20"
+            ]
+          },
+          "bottom_bar_buttons": [
+            {"name": "Order"},
+            {"name": "Drinks"},
+            {"name": "Payment", "color": "#5D377B"}
+          ]
+        },
+        "payment_screen": {
+          "header": {
+            "total_amount": "4.70 SR"
+          },
+          "summary": {
+            "remaining": "0.00 SR",
+            "payment_method": [
+              {"name": "Card", "amount": "4.70 SR"}
+            ]
+          },
+          "numpad": "Same as main screen",
+          "buttons": [
+            "Back",
+            {"name": "Validate", "color": "#5D377B"}
+          ],
+          "invoice_option": true,
+          "customer_option": true
+        },
+        "receipt_screen": {
+          "status_message": "Payment Successful",
+          "total_paid": "4.70 SR",
+          "buttons": [
+            {"name": "Print Full Receipt"},
+            {"name": "New Order", "color": "#5D377B"}
+          ],
+          "email_receipt_field": {"placeholder": "e.g. johndoe@mail.com"},
+          "receipt_details": {
+            "logo": "Your logo",
+            "qr_code": "image_of_qr_code.png",
+            "title": "Simplified Tax Invoice",
+            "items": [
+              {"name": "Green Tea", "quantity": "1.00", "price": "4.70 SR"}
+            ],
+            "summary": {
+              "untaxed_amount": "4.09 SR",
+              "vat_taxes": "0.61 SR",
+              "total_arabic": "الإجمالي / TOTAL",
+              "total_value": "4.70 SR"
+            },
+            "payment_info": {
+              "method": "Card",
+              "amount": "4.70 SR"
+            },
+            "footer": "Powered by Odoo",
+            "order_info": "Order ID, Date, Time"
+          }
+        },
+        "customer_management": {
+          "screen_title": "Customers",
+          "buttons": [{"name": "Create", "color": "#5D377B"}],
+          "search_bar": "Search Customers...",
+          "customer_list_example": [
+            {"name": "Administrator", "contact": "admin@example.com"},
+            {"name": "ali naji", "contact": "0551111111"},
+            {"name": "John Doe", "contact": null},
+            {"name": "saqer", "contact": null}
+          ]
+        },
+        "customer_creation_form": {
+          "screen_title": "Edit Partner",
+          "type_selector": ["Individual", "Company"],
+          "fields": [
+            {"name": "Name", "placeholder": "e.g. Brandon Freeman"},
+            {"name": "Company Name", "optional": true},
+            {"name": "Job Position", "placeholder": "e.g. Sales Director"},
+            {"name": "Phone", "placeholder": ""},
+            {"name": "Mobile", "placeholder": ""},
+            {"name": "Email", "placeholder": ""},
+            {"name": "Website", "placeholder": "e.g. https://www.odoo.com"},
+            {"name": "Title", "placeholder": "e.g. Mister"},
+            {"name": "Tags", "placeholder": "e.g. \"B2B\", \"VIP\", \"Consulting\", ..."},
+            {"name": "VAT Number", "placeholder": "/ if not applicable"},
+            {"name": "Address", "sub_fields": ["Street", "Neighborhood", "City", "State", "ZIP", "Country", "Building Number", "Plot Identification"]}
+          ],
+          "tabs": [
+            "Contacts & Addresses",
+            "Sales & Purchase",
+            "Invoicing",
+            "Internal Notes"
+          ],
+          "buttons": [
+            {"name": "Save", "color": "#5D377B"},
+            {"name": "Discard"}
+          ]
+        },
+        "actions_menu": {
+          "title": "Actions",
+          "buttons": [
+            "General Note",
+            "Split",
+            "Transfer / Merge",
+            "Edit Order Name",
+            "1 Guests",
+            "Customer Note",
+            "Pricelist",
+            "Refund",
+            "Switch to Takeaway",
+            "Cancel Order"
+          ]
+        }
+      }
+    }
+  }
