@@ -2,6 +2,50 @@ import 'package:json_annotation/json_annotation.dart';
 
 part 'pos_session.g.dart';
 
+/// Helper function to extract ID from Odoo array format [id, name]
+int _extractIdFromArray(dynamic value) {
+  if (value is List && value.isNotEmpty) {
+    return value[0] as int;
+  } else if (value is int) {
+    return value;
+  } else if (value == false || value == null) {
+    return 0; // Handle false values as 0
+  }
+  throw FormatException('Invalid ID format: $value');
+}
+
+/// Helper function to extract nullable ID from Odoo array format
+int? _extractNullableIdFromArray(dynamic value) {
+  if (value == false || value == null) {
+    return null;
+  }
+  if (value is List && value.isNotEmpty) {
+    return value[0] as int;
+  } else if (value is int) {
+    return value;
+  }
+  return null;
+}
+
+/// Helper function to handle nullable strings that might be false
+String? _extractNullableString(dynamic value) {
+  if (value == false || value == null) {
+    return null;
+  }
+  return value.toString();
+}
+
+/// Helper function to handle nullable DateTime that might be false
+DateTime? _extractNullableDateTime(dynamic value) {
+  if (value == false || value == null) {
+    return null;
+  }
+  if (value is String) {
+    return DateTime.tryParse(value);
+  }
+  return null;
+}
+
 /// pos.session - POS Session Management
 /// Represents a complete POS session with all states and controls
 @JsonSerializable()
@@ -10,20 +54,20 @@ class POSSession {
   final String name;
   
   // References
-  @JsonKey(name: 'config_id')
+  @JsonKey(name: 'config_id', fromJson: _extractIdFromArray)
   final int configId;
-  @JsonKey(name: 'user_id')
+  @JsonKey(name: 'user_id', fromJson: _extractIdFromArray)
   final int userId;
-  @JsonKey(name: 'company_id')
+  @JsonKey(name: 'company_id', fromJson: _extractIdFromArray)
   final int companyId;
-  @JsonKey(name: 'currency_id')
+  @JsonKey(name: 'currency_id', fromJson: _extractIdFromArray)
   final int currencyId;
   
   // Session State and Timing
   final POSSessionState state;
-  @JsonKey(name: 'start_at')
+  @JsonKey(name: 'start_at', fromJson: _extractNullableDateTime)
   final DateTime? startAt;
-  @JsonKey(name: 'stop_at')
+  @JsonKey(name: 'stop_at', fromJson: _extractNullableDateTime)
   final DateTime? stopAt;
   @JsonKey(name: 'sequence_number')
   final int sequenceNumber;
@@ -33,7 +77,7 @@ class POSSession {
   // Cash Management
   @JsonKey(name: 'cash_control')
   final bool cashControl;
-  @JsonKey(name: 'cash_journal_id')
+  @JsonKey(name: 'cash_journal_id', fromJson: _extractNullableIdFromArray)
   final int? cashJournalId;
   @JsonKey(name: 'cash_register_balance_start')
   final double cashRegisterBalanceStart;
@@ -47,9 +91,9 @@ class POSSession {
   final double? cashRealTransaction;
   
   // Notes and Control
-  @JsonKey(name: 'opening_notes')
+  @JsonKey(name: 'opening_notes', fromJson: _extractNullableString)
   final String? openingNotes;
-  @JsonKey(name: 'closing_notes')
+  @JsonKey(name: 'closing_notes', fromJson: _extractNullableString)
   final String? closingNotes;
   final bool rescue;
   @JsonKey(name: 'update_stock_at_closing')
@@ -64,7 +108,7 @@ class POSSession {
   final List<int> pickingIds;
   @JsonKey(name: 'payment_method_ids')
   final List<int> paymentMethodIds;
-  @JsonKey(name: 'move_id')
+  @JsonKey(name: 'move_id', fromJson: _extractNullableIdFromArray)
   final int? moveId;
   @JsonKey(name: 'bank_payment_ids')
   final List<int> bankPaymentIds;

@@ -8,10 +8,10 @@ part 'pos_payment_method.g.dart';
 class POSPaymentMethod {
   final int id;
   final String name;
-  final int sequence;
-  final bool active;
+  final int? sequence;
+  final bool? active;
   @JsonKey(name: 'company_id')
-  final int companyId;
+  final int? companyId;
   
   // Account Settings
   @JsonKey(name: 'outstanding_account_id')
@@ -27,7 +27,7 @@ class POSPaymentMethod {
   @JsonKey(name: 'split_transactions')
   final bool splitTransactions;
   @JsonKey(name: 'use_payment_terminal')
-  final String? usePaymentTerminal;
+  final bool usePaymentTerminal;
   
   // Relationships (stored as IDs)
   @JsonKey(name: 'open_session_ids')
@@ -38,15 +38,15 @@ class POSPaymentMethod {
   POSPaymentMethod({
     required this.id,
     required this.name,
-    this.sequence = 0,
-    this.active = true,
-    required this.companyId,
+    this.sequence,
+    this.active,
+    this.companyId,
     this.outstandingAccountId,
     this.receivableAccountId,
     this.journalId,
     this.isCashCount = false,
     this.splitTransactions = false,
-    this.usePaymentTerminal,
+    this.usePaymentTerminal = false,
     this.openSessionIds = const [],
     this.configIds = const [],
   });
@@ -58,10 +58,10 @@ class POSPaymentMethod {
   bool get isCash => isCashCount;
 
   /// Check if this is a card payment method
-  bool get isCard => usePaymentTerminal != null;
+  bool get isCard => usePaymentTerminal;
 
   /// Check if payment method requires terminal
-  bool get requiresTerminal => usePaymentTerminal != null && usePaymentTerminal!.isNotEmpty;
+  bool get requiresTerminal => usePaymentTerminal;
 
   /// Get payment method type
   PaymentMethodType get type {
@@ -81,7 +81,7 @@ class POSPaymentMethod {
     int? journalId,
     bool? isCashCount,
     bool? splitTransactions,
-    String? usePaymentTerminal,
+    bool? usePaymentTerminal,
     List<int>? openSessionIds,
     List<int>? configIds,
   }) {

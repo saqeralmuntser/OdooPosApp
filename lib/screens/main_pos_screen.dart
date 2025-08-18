@@ -1,14 +1,15 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import '../providers/pos_provider.dart';
-import '../models/product.dart';
-import '../models/order_item.dart';
+import '../backend/providers/enhanced_pos_provider.dart';
+import '../backend/models/product_product.dart';
 import '../theme/app_theme.dart';
 import '../widgets/numpad_widget.dart';
 import '../widgets/actions_menu_dialog.dart';
 import '../widgets/product_information_popup.dart';
 import '../widgets/attribute_selection_popup.dart';
+import '../backend/providers/product_attribute_provider.dart';
 
 class MainPOSScreen extends StatefulWidget {
   const MainPOSScreen({super.key});
@@ -27,50 +28,183 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
     super.dispose();
   }
 
-  void _showProductInformation(BuildContext context, Product product) {
+
+
+  void _showProductInformation(BuildContext context, ProductProduct product) {
     showDialog(
       context: context,
       builder: (context) => ProductInformationPopup(product: product),
     );
   }
 
-  void _showAttributeSelection(BuildContext context, Product product, POSProvider posProvider) {
-    if (product.attributes.isEmpty) {
-      // If no attributes, add directly to order
-      posProvider.addProductToOrder(product);
+
+
+  void _showAttributeSelectionPopup(BuildContext context, ProductProduct product, EnhancedPOSProvider posProvider) {
+    print('=== Product Debug Info ===');
+    print('Product: ${product.displayName}');
+    print('Product ID: ${product.id}');
+    print('Product Template ID: ${product.productTmplId}');
+    print('Has Variants: ${product.hasVariants}');
+    print('Variant Value IDs: ${product.productTemplateVariantValueIds}');
+    print('Product JSON: ${product.toJson()}');
+    print('========================');
+    
+    // Check if product has variants/attributes using the backend service
+    bool hasAttributes = posProvider.backendService.productHasAttributes(product);
+    print('Has Attributes (from template): $hasAttributes');
+    
+    if (!hasAttributes) {
+      // Product has no attributes, add directly to order
+      print('No attributes - adding directly');
+      _addProductToOrder(context, product, posProvider);
       return;
     }
+    
+    print('Has variants - showing popup');
 
     showDialog(
       context: context,
-      builder: (context) => AttributeSelectionPopup(
-        product: product,
-        onConfirm: (Product selectedProduct, List<AttributeGroup> selectedAttributes) {
-          // Create a new product with selected attributes
-          final customizedProduct = Product(
-            id: selectedProduct.id,
-            name: selectedProduct.name,
-            price: selectedProduct.price,
-            category: selectedProduct.category,
-            image: selectedProduct.image,
-            vatRate: selectedProduct.vatRate,
-            attributes: selectedAttributes,
-            inventory: selectedProduct.inventory,
-            financials: selectedProduct.financials,
-          );
-          
-          posProvider.addProductToOrder(customizedProduct);
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${selectedProduct.name} added to order'),
-              backgroundColor: Colors.green,
-            ),
-          );
+      builder: (dialogContext) => ChangeNotifierProvider(
+        create: (context) {
+          final provider = ProductAttributeProvider();
+          // Set the backend service instance from the POS provider
+          provider.setBackendService(posProvider.backendService);
+          return provider;
         },
+        child: AttributeSelectionPopup(
+          product: product,
+          onConfirm: (productId, quantity, selectedAttributeValueIds, selectedAttributeNames, selectedAttributeExtraPrices) {
+            // Add product using a delayed approach to avoid context issues
+            _handleAttributeProductAdd(
+              product, 
+              quantity, 
+              selectedAttributeValueIds,
+              selectedAttributeNames: selectedAttributeNames,
+              selectedAttributeExtraPrices: selectedAttributeExtraPrices,
+            );
+          },
+        ),
       ),
     );
   }
+
+  /// Handle adding product with attributes in a safer way
+  void _handleAttributeProductAdd(ProductProduct product, double quantity, List<int> selectedAttributeValueIds, {List<String>? selectedAttributeNames, List<double>? selectedAttributeExtraPrices}) async {
+    // Get the current provider in a safe way
+    if (!mounted) return;
+    
+    try {
+      final posProvider = Provider.of<EnhancedPOSProvider>(context, listen: false);
+      
+      // Ensure there's an active order, create one if needed
+      if (!posProvider.hasActiveOrder) {
+        final session = posProvider.currentSession;
+        if (session == null) {
+          throw Exception('No active session found');
+        }
+        
+        final orderResult = await posProvider.backendService.orderManager.createOrder(session: session);
+        if (!orderResult.success) {
+          throw Exception(orderResult.error ?? 'Failed to create order');
+        }
+      }
+      
+      // Add the product with attributes to the order
+      final result = await posProvider.backendService.orderManager.addProductToOrder(
+        product: product,
+        quantity: quantity,
+        customAttributeValueIds: selectedAttributeValueIds,
+        customAttributeValueNames: selectedAttributeNames ?? [],
+        customAttributeExtraPrices: selectedAttributeExtraPrices ?? [],
+      );
+      
+      if (!result.success) {
+        throw Exception(result.error ?? 'Failed to add product to order');
+      }
+      
+      // Check if widget is still mounted before using context
+      if (!mounted) return;
+      
+      // Use the actual attribute names passed in
+      String attributeText = '';
+      if (selectedAttributeNames != null && selectedAttributeNames.isNotEmpty) {
+        attributeText = ' (${selectedAttributeNames.join(', ')})';
+      }
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم إضافة ${product.displayName}$attributeText للطلب (الكمية: ${quantity.toStringAsFixed(0)})'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      print('Error adding product to order: $e');
+      
+      // Check if widget is still mounted before using context
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('خطأ في إضافة المنتج: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// Add product to order without attributes (for simple products)
+  void _addProductToOrder(BuildContext context, ProductProduct product, EnhancedPOSProvider posProvider) async {
+    try {
+      print('Adding product without attributes: ${product.displayName}');
+      
+      // Ensure there's an active order, create one if needed
+      if (!posProvider.hasActiveOrder) {
+        final session = posProvider.currentSession;
+        if (session == null) {
+          throw Exception('No active session found');
+        }
+        
+        final orderResult = await posProvider.backendService.orderManager.createOrder(session: session);
+        if (!orderResult.success) {
+          throw Exception(orderResult.error ?? 'Failed to create order');
+        }
+      }
+      
+      // Add the product to the order
+      await posProvider.addProductToCurrentOrder(product, 1.0);
+      
+      // Check if widget is still mounted before using context
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Added ${product.displayName} to order'),
+          duration: const Duration(seconds: 2),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      print('Error adding product to order: $e');
+      
+      // Check if widget is still mounted before using context
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to add product to order: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+
+
+
+
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -78,7 +212,7 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => Navigator.of(context).pushNamedAndRemoveUntil('/dashboard', (route) => false),
         ),
         title: Row(
           children: [
@@ -98,8 +232,8 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
               ),
             ),
             const Spacer(),
-            // Table number
-            Consumer<POSProvider>(
+            // Session info
+            Consumer<EnhancedPOSProvider>(
               builder: (context, posProvider, _) => Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
@@ -107,7 +241,7 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
-                  posProvider.tableNumber,
+                  posProvider.currentSession?.name ?? 'جلسة غير محددة',
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                   ),
@@ -116,9 +250,9 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
             ),
             const SizedBox(width: 16),
             // User
-            Consumer<POSProvider>(
+            Consumer<EnhancedPOSProvider>(
               builder: (context, posProvider, _) => Text(
-                posProvider.currentUser ?? 'User',
+                posProvider.currentUser ?? 'مستخدم',
                 style: const TextStyle(
                   fontWeight: FontWeight.w500,
                 ),
@@ -152,47 +286,88 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                 ),
 
                 // Category tabs
-                Consumer<POSProvider>(
-                  builder: (context, posProvider, _) => Container(
-                    height: 50,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: posProvider.categories.length,
-                      itemBuilder: (context, index) {
-                        final category = posProvider.categories[index];
-                        final isSelected = posProvider.selectedCategory == category ||
-                            (posProvider.selectedCategory.isEmpty && category == 'All');
-                        
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: ChoiceChip(
-                            label: Text(category),
-                            selected: isSelected,
-                            onSelected: (selected) {
-                              if (selected) {
-                                posProvider.selectCategory(category);
-                              }
-                            },
-                            selectedColor: AppTheme.primaryColor.withOpacity(0.2),
-                            labelStyle: TextStyle(
-                              color: isSelected ? AppTheme.primaryColor : AppTheme.blackColor,
-                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                Consumer<EnhancedPOSProvider>(
+                  builder: (context, posProvider, _) {
+                    final categories = ['الكل', ...posProvider.categories.map((cat) => cat.name)];
+                    
+                    return Container(
+                      height: 50,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: categories.length,
+                        itemBuilder: (context, index) {
+                          final category = categories[index];
+                          final isSelected = posProvider.selectedCategoryName == category ||
+                              (posProvider.selectedCategoryName.isEmpty && category == 'الكل');
+                          
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text(category),
+                              selected: isSelected,
+                              onSelected: (selected) {
+                                if (selected) {
+                                  if (category == 'الكل') {
+                                    posProvider.selectCategory(null);
+                                  } else {
+                                    final selectedCat = posProvider.categories
+                                        .firstWhere((cat) => cat.name == category);
+                                    posProvider.selectCategory(selectedCat);
+                                  }
+                                }
+                              },
+                              selectedColor: AppTheme.primaryColor.withOpacity(0.2),
+                              labelStyle: TextStyle(
+                                color: isSelected ? AppTheme.primaryColor : Colors.grey[700],
+                                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+                          );
+                        },
+                      ),
+                    );
+                  },
                 ),
 
                 // Product grid
                 Expanded(
-                  child: Consumer<POSProvider>(
+                  child: Consumer<EnhancedPOSProvider>(
                     builder: (context, posProvider, _) {
-                      final products = _searchQuery.isEmpty
-                          ? posProvider.getFilteredProducts()
-                          : posProvider.searchProducts(_searchQuery);
+                      List<ProductProduct> products;
+                      
+                      if (_searchQuery.isEmpty) {
+                        products = posProvider.getFilteredProducts();
+                      } else {
+                        products = posProvider.products
+                            .where((product) => product.displayName
+                                .toLowerCase()
+                                .contains(_searchQuery.toLowerCase()))
+                            .toList();
+                      }
+
+                      if (products.isEmpty) {
+                        return const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                                Icons.inventory_2_outlined,
+                    size: 64,
+                                color: Colors.grey,
+                  ),
+                              SizedBox(height: 16),
+                  Text(
+                                'لا توجد منتجات',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  color: Colors.grey,
+                                ),
+                  ),
+                ],
+              ),
+            );
+          }
 
                       return GridView.builder(
                         padding: const EdgeInsets.all(16),
@@ -207,7 +382,7 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                           final product = products[index];
                           return ProductCard(
                             product: product,
-                            onTap: () => _showAttributeSelection(context, product, posProvider),
+                            onTap: () => _showAttributeSelectionPopup(context, product, posProvider),
                             onInfoTap: () => _showProductInformation(context, product),
                           );
                         },
@@ -295,14 +470,14 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                   child: const NumpadWidget(),
                 ),
 
-                // Payment button
+                                // Payment button
                 Container(
                   padding: const EdgeInsets.all(16),
                   width: double.infinity,
-                  child: Consumer<POSProvider>(
+                  child: Consumer<EnhancedPOSProvider>(
                     builder: (context, posProvider, _) {
-                      final hasItems = posProvider.orderItems.isNotEmpty;
-                      final currencyFormat = NumberFormat.currency(symbol: 'SR ');
+                      final hasItems = posProvider.orderLines.isNotEmpty;
+                      final currencyFormat = NumberFormat.currency(symbol: 'ر.س ');
                       
                       return Container(
                         height: 60,
@@ -345,7 +520,7 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.payment,
                                 color: Colors.white,
                                 size: 24,
@@ -355,7 +530,7 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
+                                  const Text(
                                     'الدفع',
                                     style: TextStyle(
                                       color: Colors.white,
@@ -375,7 +550,7 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                                 ],
                               ),
                               const Spacer(),
-                              Icon(
+                              const Icon(
                                 Icons.arrow_forward_ios,
                                 color: Colors.white,
                                 size: 16,
@@ -397,7 +572,7 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
 }
 
 class ProductCard extends StatelessWidget {
-  final Product product;
+  final ProductProduct product;
   final VoidCallback onTap;
   final VoidCallback onInfoTap;
 
@@ -410,9 +585,13 @@ class ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final currencyFormat = NumberFormat.currency(symbol: 'SR ');
+    final currencyFormat = NumberFormat.currency(symbol: 'ر.س ');
 
     return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
@@ -423,50 +602,45 @@ class ProductCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Product image placeholder
+                  // Product image
                   Expanded(
                     child: Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
-                        color: AppTheme.backgroundColor,
+                        color: AppTheme.primaryColor.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Stack(
-                        children: [
-                          const Center(
-                            child: Icon(
-                              Icons.fastfood,
-                              size: 48,
-                              color: AppTheme.primaryColor,
-                            ),
-                          ),
-                          // Attributes indicator
-                          if (product.attributes.isNotEmpty)
-                            Positioned(
-                              top: 8,
-                              left: 8,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.primaryColor.withOpacity(0.8),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: const Icon(
-                                  Icons.tune,
-                                  size: 12,
-                                  color: Colors.white,
-                                ),
+                      child: product.image128 != null && product.image128!.isNotEmpty
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.memory(
+                                base64Decode(product.image128!),
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return const Center(
+                                    child: Icon(
+                                      Icons.fastfood,
+                                      size: 48,
+                                      color: AppTheme.primaryColor,
+                                    ),
+                                  );
+                                },
+                              ),
+                            )
+                          : const Center(
+                              child: Icon(
+                                Icons.fastfood,
+                                size: 48,
+                                color: AppTheme.primaryColor,
                               ),
                             ),
-                        ],
-                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
                   
                   // Product name
                   Text(
-                    product.name,
+                    product.displayName,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
@@ -477,7 +651,7 @@ class ProductCard extends StatelessWidget {
                   
                   // Product price
                   Text(
-                    currencyFormat.format(product.price),
+                    currencyFormat.format(product.lstPrice),
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                       color: AppTheme.primaryColor,
                       fontWeight: FontWeight.bold,
@@ -525,9 +699,10 @@ class OrderSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<POSProvider>(
+    return Consumer<EnhancedPOSProvider>(
       builder: (context, posProvider, _) {
-        final currencyFormat = NumberFormat.currency(symbol: 'SR ');
+        final currencyFormat = NumberFormat.currency(symbol: 'ر.س ');
+        final orderLines = posProvider.orderLines;
 
         return Container(
           padding: const EdgeInsets.all(16),
@@ -545,7 +720,7 @@ class OrderSummary extends StatelessWidget {
 
               // Order items
               Expanded(
-                child: posProvider.orderItems.isEmpty
+                child: orderLines.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -554,13 +729,13 @@ class OrderSummary extends StatelessWidget {
                             Icon(
                               Icons.shopping_cart_outlined,
                               size: 48,
-                              color: AppTheme.secondaryColor,
+                              color: Colors.grey[400],
                             ),
                             const SizedBox(height: 8),
                             Text(
                               'لا توجد عناصر في الطلب',
                               style: TextStyle(
-                                color: AppTheme.secondaryColor,
+                                color: Colors.grey[600],
                                 fontSize: 14,
                               ),
                               textAlign: TextAlign.center,
@@ -569,45 +744,57 @@ class OrderSummary extends StatelessWidget {
                         ),
                       )
                     : ListView.builder(
-                        itemCount: posProvider.orderItems.length,
+                        itemCount: orderLines.length,
                         itemBuilder: (context, index) {
-                          final item = posProvider.orderItems[index];
+                          final orderLine = orderLines[index];
                           return OrderItemCard(
-                            item: item,
-                            onRemove: () => posProvider.removeItemFromOrder(index),
+                            orderLine: orderLine,
+                            onRemove: () => posProvider.removeOrderLine(index),
                             onQuantityChanged: (quantity) =>
-                                posProvider.updateItemQuantity(index, quantity),
+                                posProvider.updateOrderLineQuantity(index, quantity),
                           );
                         },
                       ),
               ),
 
               // Order totals
-              const Divider(),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Taxes:'),
-                  Text(currencyFormat.format(posProvider.taxAmount)),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Total:',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  Text(
-                    currencyFormat.format(posProvider.total),
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: AppTheme.primaryColor,
-                      fontWeight: FontWeight.bold,
+              if (orderLines.isNotEmpty) ...[
+                const Divider(),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('المجموع الفرعي:'),
+                    Text(currencyFormat.format(posProvider.subtotal)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('الضرائب:'),
+                    Text(currencyFormat.format(posProvider.taxAmount)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'الإجمالي:',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                    Text(
+                      currencyFormat.format(posProvider.total),
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: AppTheme.primaryColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         );
@@ -617,23 +804,24 @@ class OrderSummary extends StatelessWidget {
 }
 
 class OrderItemCard extends StatelessWidget {
-  final OrderItem item;
+  final dynamic orderLine; // Can be POSOrderLine
   final VoidCallback onRemove;
-  final Function(int) onQuantityChanged;
+  final Function(double) onQuantityChanged;
 
   const OrderItemCard({
     super.key,
-    required this.item,
+    required this.orderLine,
     required this.onRemove,
     required this.onQuantityChanged,
   });
 
   @override
   Widget build(BuildContext context) {
-    final currencyFormat = NumberFormat.currency(symbol: 'SR ');
+    final currencyFormat = NumberFormat.currency(symbol: 'ر.س ');
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
+      elevation: 1,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
@@ -643,43 +831,45 @@ class OrderItemCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    item.product.name,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  // Display selected attributes
-                  if (item.product.attributes.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Wrap(
-                      children: item.product.attributes.map((attributeGroup) {
-                        final selectedOptions = attributeGroup.options
-                            .where((attr) => attr.isSelected)
-                            .map((attr) => attr.name)
-                            .join(', ');
-                        
-                        if (selectedOptions.isNotEmpty) {
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 4, bottom: 2),
-                            child: Text(
-                              '• $selectedOptions',
-                              style: const TextStyle(
-                                color: AppTheme.secondaryColor,
-                                fontSize: 11,
-                                fontStyle: FontStyle.italic,
-                              ),
+                  // Product name with attributes
+                  RichText(
+                    text: TextSpan(
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black,
+                        fontSize: 14,
+                      ),
+                      children: [
+                        TextSpan(
+                          text: orderLine.fullProductName ?? 'منتج غير محدد',
+                        ),
+                        if (orderLine.customAttributeValueNames.isNotEmpty)
+                          TextSpan(
+                            text: ' (${orderLine.customAttributeValueNames.join(', ')})',
+                            style: TextStyle(
+                              color: AppTheme.primaryColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
                             ),
-                          );
-                        }
-                        return const SizedBox.shrink();
-                      }).toList(),
+                          ),
+                      ],
                     ),
-                  ],
+                  ),
                   const SizedBox(height: 4),
                   Text(
-                    '${currencyFormat.format(item.product.price)} / وحدة',
-                    style: const TextStyle(
-                      color: AppTheme.secondaryColor,
+                    '${currencyFormat.format(orderLine.priceUnit ?? 0)} / وحدة',
+                    style: TextStyle(
+                      color: Colors.grey[600],
                       fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'الإجمالي: ${currencyFormat.format(orderLine.priceSubtotal ?? 0)}',
+                    style: TextStyle(
+                      color: AppTheme.primaryColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
@@ -690,8 +880,16 @@ class OrderItemCard extends StatelessWidget {
             Row(
               children: [
                 IconButton(
-                  onPressed: () => onQuantityChanged(item.quantity - 1),
-                  icon: const Icon(Icons.remove_circle_outline),
+                  onPressed: () {
+                    final newQty = (orderLine.qty ?? 1) - 1;
+                    if (newQty > 0) {
+                      onQuantityChanged(newQty);
+                    }
+                  },
+                  icon: Icon(
+                    Icons.remove_circle_outline,
+                    color: AppTheme.primaryColor,
+                  ),
                   constraints: const BoxConstraints(
                     minWidth: 32,
                     minHeight: 32,
@@ -701,13 +899,22 @@ class OrderItemCard extends StatelessWidget {
                   width: 40,
                   alignment: Alignment.center,
                   child: Text(
-                    item.quantity.toString(),
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    (orderLine.qty ?? 1).toStringAsFixed(0),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
                   ),
                 ),
                 IconButton(
-                  onPressed: () => onQuantityChanged(item.quantity + 1),
-                  icon: const Icon(Icons.add_circle_outline),
+                  onPressed: () {
+                    final newQty = (orderLine.qty ?? 1) + 1;
+                    onQuantityChanged(newQty);
+                  },
+                  icon: Icon(
+                    Icons.add_circle_outline,
+                    color: AppTheme.primaryColor,
+                  ),
                   constraints: const BoxConstraints(
                     minWidth: 32,
                     minHeight: 32,

@@ -1,4 +1,5 @@
 import 'package:json_annotation/json_annotation.dart';
+import 'odoo_converters.dart';
 
 part 'res_partner.g.dart';
 
@@ -9,28 +10,44 @@ class ResPartner {
   final int id;
   final String name;
   @JsonKey(name: 'display_name')
+  @OdooStringConverter()
   final String? displayName;
+  @OdooStringConverter()
   final String? email;
+  @OdooStringConverter()
   final String? phone;
+  @OdooStringConverter()
   final String? mobile;
+  @OdooStringConverter()
   final String? website;
   @JsonKey(name: 'vat')
+  @OdooStringConverter()
   final String? vatNumber;
   @JsonKey(name: 'function')
+  @OdooStringConverter()
   final String? jobPosition;
+  @OdooStringConverter()
   final String? title;
+  @OdooStringConverter()
   final String? street;
+  @OdooStringConverter()
   final String? street2;
+  @OdooStringConverter()
   final String? city;
+  @OdooStringConverter()
   final String? state;
+  @OdooStringConverter()
   final String? zip;
   @JsonKey(name: 'country_id')
+  @OdooIntConverter()
   final int? countryId;
   @JsonKey(name: 'is_company')
   final bool isCompany;
   @JsonKey(name: 'parent_id')
+  @OdooIntConverter()
   final int? parentId;
   @JsonKey(name: 'company_id')
+  @OdooIntConverter()
   final int? companyId;
   final bool active;
   @JsonKey(name: 'supplier_rank')
@@ -39,19 +56,24 @@ class ResPartner {
   final int customerRank;
   
   // Contact Information
+  @OdooStringConverter()
   final String? lang;
+  @OdooStringConverter()
   final String? tz;
   @JsonKey(name: 'category_id')
   final List<int> categoryId;
   
   // Financial Information
   @JsonKey(name: 'property_account_position_id')
+  @OdooIntConverter()
   final int? propertyAccountPositionId;
   @JsonKey(name: 'property_payment_term_id')
+  @OdooIntConverter()
   final int? propertyPaymentTermId;
   
   // Image
   @JsonKey(name: 'image_128')
+  @OdooStringConverter()
   final String? image128;
   @JsonKey(name: 'has_image')
   final bool hasImage;

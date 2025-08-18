@@ -75,6 +75,18 @@ class SyncService {
     }
   }
 
+  /// Enhanced connection change handler for hybrid mode
+  void _onHybridModeChanged(bool isOnlineMode) {
+    if (isOnlineMode && !_isSyncing) {
+      // Switched to online mode, start comprehensive sync
+      print('SyncService: Switched to online mode, starting comprehensive sync...');
+      syncPendingChanges();
+    } else if (!isOnlineMode) {
+      // Switched to offline mode, ensure local data is up to date
+      print('SyncService: Switched to offline mode');
+    }
+  }
+
   /// Sync all pending changes
   Future<SyncResult> syncPendingChanges() async {
     if (_isSyncing) {

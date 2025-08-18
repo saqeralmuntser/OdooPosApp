@@ -1,24 +1,31 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 // Import existing screens
 import 'screens/login_screen.dart';
-import 'screens/pos_dashboard_screen.dart';
+import 'screens/enhanced_pos_dashboard.dart';
 import 'screens/main_pos_screen.dart';
 import 'screens/payment_screen.dart';
 import 'screens/receipt_screen.dart';
 import 'screens/customer_management_screen.dart';
 
+
 // Import new backend components
 import 'backend/providers/enhanced_pos_provider.dart';
 import 'backend/migration/backend_migration.dart';
-import 'backend/screens/enhanced_login_screen.dart';
-import 'backend/screens/backend_config_screen.dart';
 
 // Import theme
 import 'theme/app_theme.dart';
 
 void main() {
+  // تهيئة sqflite للـ desktop platforms
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
+  
   runApp(const POSAppWithBackend());
 }
 
@@ -37,8 +44,8 @@ class POSAppWithBackend extends StatelessWidget {
           '/backend-config': (context) => const BackendConfigScreen(),
           '/enhanced-login': (context) => const EnhancedLoginScreen(),
           '/login': (context) => const LoginScreen(),
-          '/dashboard': (context) => const POSDashboardScreen(),
-          '/pos': (context) => const MainPOSScreen(),
+          '/dashboard': (context) => const EnhancedPOSDashboard(),
+          '/main-pos': (context) => const MainPOSScreen(),
           '/payment': (context) => const PaymentScreen(),
           '/receipt': (context) => const ReceiptScreen(),
           '/customers': (context) => const CustomerManagementScreen(),
@@ -65,11 +72,18 @@ class _EnhancedLoginScreenState extends State<EnhancedLoginScreen> {
   @override
   void initState() {
     super.initState();
-    _initializeBackend();
+    // تأجيل التهيئة حتى انتهاء عملية البناء
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeBackend();
+    });
   }
 
   Future<void> _initializeBackend() async {
-    await BackendMigration.initializeEnhancedBackend(context);
+    try {
+      await BackendMigration.initializeEnhancedBackend();
+    } catch (e) {
+      print('Error initializing backend: $e');
+    }
   }
 
   @override
@@ -282,8 +296,8 @@ class BackendConfigScreen extends StatefulWidget {
 
 class _BackendConfigScreenState extends State<BackendConfigScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _serverUrlController = TextEditingController(text: 'https://demo.odoo.com');
-  final _databaseController = TextEditingController(text: 'demo');
+  final _serverUrlController = TextEditingController(text: 'http://localhost:8069');
+  final _databaseController = TextEditingController(text: 'odoo18');
   final _apiKeyController = TextEditingController();
 
   bool _useOfflineMode = false;
@@ -291,11 +305,18 @@ class _BackendConfigScreenState extends State<BackendConfigScreen> {
   @override
   void initState() {
     super.initState();
-    _initializeBackend();
+    // تأجيل التهيئة حتى انتهاء عملية البناء
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeBackend();
+    });
   }
 
   Future<void> _initializeBackend() async {
-    await BackendMigration.initializeEnhancedBackend(context);
+    try {
+      await BackendMigration.initializeEnhancedBackend();
+    } catch (e) {
+      print('Error initializing backend: $e');
+    }
   }
 
   @override
@@ -465,7 +486,6 @@ class _BackendConfigScreenState extends State<BackendConfigScreen> {
     final success = await provider.configureConnection(
       serverUrl: _serverUrlController.text.trim(),
       database: _databaseController.text.trim(),
-      apiKey: _apiKeyController.text.trim().isEmpty ? null : _apiKeyController.text.trim(),
     );
 
     if (mounted) {
@@ -487,7 +507,6 @@ class _BackendConfigScreenState extends State<BackendConfigScreen> {
       await provider.configureConnection(
         serverUrl: _serverUrlController.text.trim(),
         database: _databaseController.text.trim(),
-        apiKey: _apiKeyController.text.trim().isEmpty ? null : _apiKeyController.text.trim(),
       );
     }
 

@@ -51,6 +51,10 @@ class POSOrderLine {
   final List<int> packLotIds;
   @JsonKey(name: 'custom_attribute_value_ids')
   final List<int> customAttributeValueIds;
+  @JsonKey(name: 'custom_attribute_value_names')
+  final List<String> customAttributeValueNames;
+  @JsonKey(name: 'custom_attribute_extra_prices')
+  final List<double> customAttributeExtraPrices;
 
   POSOrderLine({
     required this.id,
@@ -75,10 +79,36 @@ class POSOrderLine {
     this.taxIdsAfterFiscalPosition = const [],
     this.packLotIds = const [],
     this.customAttributeValueIds = const [],
+    this.customAttributeValueNames = const [],
+    this.customAttributeExtraPrices = const [],
   });
 
   factory POSOrderLine.fromJson(Map<String, dynamic> json) => _$POSOrderLineFromJson(json);
   Map<String, dynamic> toJson() => _$POSOrderLineToJson(this);
+  
+  /// Convert to JSON for server submission (filters out incompatible fields)
+  Map<String, dynamic> toServerJson() {
+    final json = toJson();
+    
+    // Remove fields that are not needed for server creation or might cause issues
+    json.remove('id'); // Remove local ID
+    json.remove('uuid'); // Remove UUID, not needed for server
+    json.remove('refunded_orderline_id'); // Usually null for new orders
+    json.remove('refunded_qty'); // Usually 0 for new orders
+    json.remove('total_cost'); // Calculated by server
+    json.remove('is_total_cost_computed'); // Calculated by server
+    json.remove('pack_lot_ids'); // Usually empty for new orders
+    json.remove('margin'); // Usually calculated by server
+    json.remove('margin_percent'); // Usually calculated by server
+    json.remove('create_date'); // Server will set this
+    json.remove('write_date'); // Server will set this
+    json.remove('tax_ids_after_fiscal_position'); // Usually calculated by server
+    
+    // Remove null values to avoid issues
+    json.removeWhere((key, value) => value == null);
+    
+    return json;
+  }
 
   /// Calculate discount amount
   double get discountAmount => priceSubtotal * (discount / 100);
@@ -133,6 +163,8 @@ class POSOrderLine {
     List<int>? taxIdsAfterFiscalPosition,
     List<int>? packLotIds,
     List<int>? customAttributeValueIds,
+    List<String>? customAttributeValueNames,
+    List<double>? customAttributeExtraPrices,
   }) {
     return POSOrderLine(
       id: id ?? this.id,
@@ -157,6 +189,8 @@ class POSOrderLine {
       taxIdsAfterFiscalPosition: taxIdsAfterFiscalPosition ?? this.taxIdsAfterFiscalPosition,
       packLotIds: packLotIds ?? this.packLotIds,
       customAttributeValueIds: customAttributeValueIds ?? this.customAttributeValueIds,
+      customAttributeValueNames: customAttributeValueNames ?? this.customAttributeValueNames,
+      customAttributeExtraPrices: customAttributeExtraPrices ?? this.customAttributeExtraPrices,
     );
   }
 }

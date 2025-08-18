@@ -1,6 +1,10 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/widgets.dart';
 import '../services/pos_backend_service.dart';
 import '../services/session_manager.dart';
+import '../services/hybrid_auth_service.dart';
+
 import '../models/pos_config.dart';
 import '../models/pos_session.dart';
 import '../models/product_product.dart';
@@ -16,6 +20,7 @@ import '../models/pos_payment_method.dart';
 /// Provides a smooth migration path from the old provider to the new backend
 class EnhancedPOSProvider with ChangeNotifier {
   final POSBackendService _backendService = POSBackendService();
+  final HybridAuthService _hybridAuth = HybridAuthService();
 
   // Connection and authentication state
   bool _isInitialized = false;
@@ -23,7 +28,14 @@ class EnhancedPOSProvider with ChangeNotifier {
   bool _isAuthenticated = false;
   bool _isLoading = false;
   String _statusMessage = '';
+
+  // Getters for backend services
+  POSBackendService get backendService => _backendService;
   String? _currentUser;
+  
+  // Hybrid authentication state
+  AuthMode _currentAuthMode = AuthMode.none;
+  bool _isOnlineMode = false;
 
   // POS configuration and session
   List<POSConfig> _availableConfigs = [];
@@ -55,6 +67,11 @@ class EnhancedPOSProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String get statusMessage => _statusMessage;
   String? get currentUser => _currentUser;
+  
+  // Hybrid authentication getters
+  AuthMode get currentAuthMode => _currentAuthMode;
+  bool get isOnlineMode => _isOnlineMode;
+  bool get isOfflineMode => !_isOnlineMode && _isAuthenticated;
 
   // POS configuration and session getters
   List<POSConfig> get availableConfigs => List.unmodifiable(_availableConfigs);
@@ -99,6 +116,9 @@ class EnhancedPOSProvider with ChangeNotifier {
 
       // Initialize backend service
       await _backendService.initialize();
+      
+      // Initialize hybrid authentication service
+      await _hybridAuth.initialize();
 
       // Setup listeners
       _setupListeners();
@@ -111,168 +131,427 @@ class EnhancedPOSProvider with ChangeNotifier {
     }
   }
 
-  /// Setup stream listeners for real-time updates
-  void _setupListeners() {
-    // Backend service streams
-    _backendService.loadingStream.listen((loading) {
-      _isLoading = loading;
-      notifyListeners();
-    });
-
-    _backendService.statusStream.listen((status) {
-      _statusMessage = status;
-      notifyListeners();
-    });
-
-    _backendService.productsStream.listen((products) {
-      _products = products;
-      notifyListeners();
-    });
-
-    _backendService.categoriesStream.listen((categories) {
-      _categories = categories;
-      notifyListeners();
-    });
-
-    _backendService.customersStream.listen((customers) {
-      _customers = customers;
-      notifyListeners();
-    });
-
-    // API client streams
-    _backendService.apiClient.connectionStream.listen((connected) {
-      _isConnected = connected;
-      notifyListeners();
-    });
-
-    _backendService.apiClient.authStream.listen((authenticated) {
-      _isAuthenticated = authenticated;
-      notifyListeners();
-    });
-
-    // Session manager streams
-    _backendService.sessionManager.sessionStream.listen((session) {
-      _currentSession = session;
-      notifyListeners();
-    });
-
-    // Order manager streams
-    _backendService.orderManager.orderStream.listen((order) {
-      _currentOrder = order;
-      notifyListeners();
-    });
-
-    _backendService.orderManager.linesStream.listen((lines) {
-      _orderLines = lines;
-      notifyListeners();
-    });
-
-    _backendService.orderManager.paymentsStream.listen((payments) {
-      _payments = payments;
-      notifyListeners();
-    });
-  }
-
   /// Configure connection to Odoo server
   Future<bool> configureConnection({
     required String serverUrl,
     required String database,
-    String? apiKey,
   }) async {
     try {
+      // Ensure provider is initialized first
+      if (!_isInitialized) {
+        await initialize();
+      }
+      
+      _setLoading(true, 'Configuring connection...');
+      print('POS Backend: Configuring connection...');
+      
+      // Configure the API client
       final result = await _backendService.configureConnection(
         serverUrl: serverUrl,
         database: database,
-        apiKey: apiKey,
       );
+
+      if (result.success) {
+        _isConnected = true;
+        _setLoading(false, 'Connection configured successfully');
+        print('POS Backend: Connection configured successfully');
+      } else {
+        _isConnected = false;
+        _setLoading(false, 'Failed to configure connection');
+        print('POS Backend: Failed to configure connection');
+      }
+
       return result.success;
     } catch (e) {
-      _setLoading(false, 'Configuration failed: $e');
+      _isConnected = false;
+      _setLoading(false, 'Connection configuration failed: $e');
+      print('POS Backend: Failed to configure connection: $e');
       return false;
     }
   }
 
-  /// Authenticate user
-  Future<bool> login(String username, String password) async {
+  /// Hybrid login - tries online first, falls back to offline
+  Future<bool> loginHybrid({
+    required String serverUrl,
+    required String database,
+    required String username,
+    required String password,
+  }) async {
     try {
-      _setLoading(true, 'Authenticating...');
-
-      final result = await _backendService.authenticate(
+      // Ensure provider is initialized first
+      if (!_isInitialized) {
+        await initialize();
+      }
+      
+      _setLoading(true, 'جاري تسجيل الدخول...');
+      
+      final result = await _hybridAuth.login(
+        serverUrl: serverUrl,
+        database: database,
         username: username,
         password: password,
       );
 
       if (result.success) {
+        _isAuthenticated = true;
         _currentUser = username;
-        _availableConfigs = _backendService.availableConfigs;
-        _setLoading(false, 'Authentication successful');
-        return true;
+        _currentAuthMode = result.mode;
+        _isOnlineMode = result.mode == AuthMode.online;
+        
+        if (_isOnlineMode) {
+          // Load initial data from server
+          await _loadInitialData();
+          _setLoading(false, 'تم تسجيل الدخول - الوضع الأونلاين');
+          print('POS Backend: Login completed - Online mode with ${_availableConfigs.length} configurations');
+        } else {
+          // Load data from local storage
+          await _loadOfflineData();
+          _setLoading(false, 'تم تسجيل الدخول - الوضع الأوفلاين');
+          print('POS Backend: Login completed - Offline mode');
+        }
+        
+        print('POS Backend: Hybrid authentication successful - Mode: ${result.mode}');
       } else {
-        _setLoading(false, 'Authentication failed: ${result.error}');
-        return false;
+        _isAuthenticated = false;
+        _currentUser = null;
+        _currentAuthMode = AuthMode.failed;
+        _isOnlineMode = false;
+        _setLoading(false, result.error ?? 'فشل في تسجيل الدخول');
+        print('POS Backend: Hybrid authentication failed: ${result.error}');
       }
+
+      return result.success;
     } catch (e) {
-      _setLoading(false, 'Authentication error: $e');
+      _isAuthenticated = false;
+      _currentUser = null;
+      _currentAuthMode = AuthMode.failed;
+      _isOnlineMode = false;
+      _setLoading(false, 'خطأ في تسجيل الدخول: $e');
+      print('POS Backend: Hybrid authentication error: $e');
       return false;
     }
   }
 
-  /// Select POS configuration
-  void selectConfig(POSConfig config) {
-    _selectedConfig = config;
-    notifyListeners();
+  /// Login to Odoo server (Legacy method - kept for compatibility)
+  Future<bool> login(String username, String password) async {
+    try {
+      // Ensure provider is initialized first
+      if (!_isInitialized) {
+        await initialize();
+      }
+      
+      _setLoading(true, 'Authenticating...');
+      print('POS Backend: Authenticating...');
+      
+      final result = await _backendService.apiClient.authenticate(
+        username: username,
+        password: password,
+      );
+
+      if (result.success) {
+        _isAuthenticated = true;
+        _currentUser = username;
+        _currentAuthMode = AuthMode.online;
+        _isOnlineMode = true;
+        _setLoading(false, 'Authentication successful');
+        print('POS Backend: Authentication successful');
+        
+        // Load initial data after successful login
+        await _loadInitialData();
+      } else {
+        _isAuthenticated = false;
+        _currentUser = null;
+        _currentAuthMode = AuthMode.failed;
+        _isOnlineMode = false;
+        _setLoading(false, 'Authentication failed');
+        print('POS Backend: Authentication failed');
+      }
+
+      return result.success;
+    } catch (e) {
+      _isAuthenticated = false;
+      _currentUser = null;
+      _currentAuthMode = AuthMode.failed;
+      _isOnlineMode = false;
+      _setLoading(false, 'Authentication error: $e');
+      print('POS Backend: Authentication error: $e');
+      return false;
+    }
   }
 
-  /// Open POS session
-  Future<bool> openSession({SessionOpeningData? openingData}) async {
+  /// Load initial data after successful authentication (Online mode)
+  Future<void> _loadInitialData() async {
+    try {
+      _setLoading(true, 'جاري تحميل البيانات...');
+      
+      // Load POS configurations from server
+      await _backendService.loadAvailableConfigs();
+      _availableConfigs = List.from(_backendService.availableConfigs);
+      
+      print('POS Backend: Loaded ${_availableConfigs.length} POS configurations');
+      for (final config in _availableConfigs) {
+        print('  - Config: ${config.name} (ID: ${config.id})');
+      }
+      
+      // Notify listeners about the updated configs
+      notifyListeners();
+      
+      _setLoading(false, 'تم تحميل البيانات بنجاح');
+    } catch (e) {
+      _setLoading(false, 'فشل في تحميل البيانات: $e');
+      print('Failed to load initial data: $e');
+    }
+  }
+
+  /// Load data from local storage (Offline mode)
+  Future<void> _loadOfflineData() async {
+    try {
+      _setLoading(true, 'Loading offline data...');
+      
+      // Load cached data from local storage
+      // This would load configurations, products, customers, etc. from SQLite
+      
+      _setLoading(false, 'Offline data loaded');
+    } catch (e) {
+      _setLoading(false, 'Failed to load offline data: $e');
+      print('Failed to load offline data: $e');
+    }
+  }
+
+  /// Reload POS configurations from server (public method)
+  Future<void> reloadConfigurations() async {
+    if (_isOnlineMode) {
+      await _loadInitialData();
+    } else {
+      await _loadOfflineData();
+    }
+  }
+
+  /// Logout from Odoo server
+  Future<void> logout() async {
+    try {
+      _setLoading(true, 'Logging out...');
+      
+      await _backendService.logout();
+      
+      // Clear all data
+      _clearAllData();
+      
+      _setLoading(false, 'Logged out successfully');
+    } catch (e) {
+      _setLoading(false, 'Logout error: $e');
+      print('Logout error: $e');
+    }
+  }
+
+  /// Open new POS session
+  Future<bool> openSession({
+    SessionOpeningData? openingData,
+  }) async {
+    // Ensure provider is initialized first
+    if (!_isInitialized) {
+      await initialize();
+    }
+    
     if (_selectedConfig == null) {
-      _setLoading(false, 'No configuration selected');
+      print('No config selected to open session');
       return false;
     }
 
     try {
       _setLoading(true, 'Opening session...');
-
+      
+      // Open session through backend service
       final result = await _backendService.openSession(
         configId: _selectedConfig!.id,
         openingData: openingData,
       );
 
       if (result.success) {
-        _paymentMethods = _backendService.paymentMethods;
         _setLoading(false, 'Session opened successfully');
         return true;
       } else {
-        _setLoading(false, 'Failed to open session: ${result.error}');
+        _setLoading(false, 'Failed to open session: ${result.error ?? 'Unknown error'}');
         return false;
       }
     } catch (e) {
-      _setLoading(false, 'Session opening error: $e');
+      _setLoading(false, 'Error opening session: $e');
+      print('Error opening session: $e');
       return false;
     }
   }
 
-  /// Close POS session
-  Future<bool> closeSession({
+  /// Check if there's an existing open session for a specific config
+  Future<SessionStatusResult?> checkExistingSession(int configId) async {
+    try {
+      if (!_isInitialized || !_isAuthenticated) {
+        return null;
+      }
+
+      final result = await _backendService.sessionManager.getSessionStatus(
+        configId,
+        _backendService.apiClient.userId!,
+      );
+      
+      return result;
+    } catch (e) {
+      print('Error checking existing session: $e');
+      return null;
+    }
+  }
+
+  /// Complete existing session (continue without creating new one)
+  Future<bool> completeExistingSession(int configId) async {
+    try {
+      if (!_isInitialized || !_isAuthenticated) {
+        return false;
+      }
+
+      _setLoading(true, 'استكمال الجلسة الموجودة...');
+      
+      // Select the config first
+      final config = _availableConfigs.firstWhere((c) => c.id == configId);
+      selectConfig(config);
+      
+      // Get the existing session status
+      final sessionStatus = await _backendService.sessionManager.getSessionStatus(
+        configId,
+        _backendService.apiClient.userId!,
+      );
+
+      if (sessionStatus.hasActiveSession != true || sessionStatus.session == null) {
+        _setLoading(false, 'لا توجد جلسة مفتوحة لاستكمالها');
+        return false;
+      }
+
+      // Set the current session
+      _currentSession = sessionStatus.session;
+      
+      // Load data for the existing session
+      await _backendService.loadPosDataForExistingSession(_currentSession!);
+      
+      // Update the products and categories from the backend service
+      _products = List.from(_backendService.products);
+      _categories = List.from(_backendService.categories);
+      _customers = List.from(_backendService.customers);
+      _paymentMethods = List.from(_backendService.paymentMethods);
+      
+      // Force a UI update
+      notifyListeners();
+      
+      // Mark session as active (the getter will automatically return true now)
+      
+      _setLoading(false, 'تم استكمال الجلسة بنجاح');
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _setLoading(false, 'خطأ في استكمال الجلسة: $e');
+      print('Error completing existing session: $e');
+      return false;
+    }
+  }
+
+  /// Get complete product information including attributes
+  Future<Map<String, dynamic>> getProductCompleteInfo(int productId) async {
+    try {
+      return await _backendService.getProductCompleteInfo(productId);
+    } catch (e) {
+      print('Error getting product complete info: $e');
+      // Return basic info as fallback
+      final product = _products.firstWhere((p) => p.id == productId);
+      return {
+        'productId': product.id,
+        'productName': product.displayName,
+        'basePrice': product.lstPrice,
+        'finalPrice': product.lstPrice,
+        'taxIds': product.taxesId,
+        'attributeGroups': <Map<String, dynamic>>[],
+      };
+    }
+  }
+
+  /// Close existing session for a specific config
+  Future<bool> closeExistingSession(
+    int configId, {
     double? cashBalance,
     String? notes,
   }) async {
-    if (_currentSession == null) {
-      _setLoading(false, 'No active session to close');
-      return false;
-    }
-
     try {
-      _setLoading(true, 'Closing session...');
+      if (!_isInitialized || !_isAuthenticated) {
+        return false;
+      }
 
+      _setLoading(true, 'إغلاق الجلسة الموجودة...');
+
+      // Get session status to verify there's an existing session
+      final sessionStatus = await _backendService.sessionManager.getSessionStatus(
+        configId,
+        _backendService.apiClient.userId!,
+      );
+
+      if (sessionStatus.hasActiveSession != true || sessionStatus.session == null) {
+        _setLoading(false, 'لا توجد جلسة مفتوحة');
+        return false;
+      }
+
+      // Prepare closing data
       final closingData = SessionClosingData(
         cashRegisterBalanceEndReal: cashBalance,
         closingNotes: notes,
       );
 
-      final result = await _backendService.closeSession(closingData);
+      // Close the session using the session manager
+      final result = await _backendService.sessionManager.closeSessionWithValidation(
+        sessionStatus.session!.id,
+        closingData,
+      );
 
       if (result.success) {
+        // If this was the current session, clear it
+        if (_currentSession?.id == sessionStatus.session!.id) {
+          _currentSession = null;
+        }
+        _setLoading(false, 'تم إغلاق الجلسة بنجاح');
+        notifyListeners();
+        return true;
+      } else {
+        _setLoading(false, 'فشل في إغلاق الجلسة: ${result.errors.join(', ')}');
+        return false;
+      }
+    } catch (e) {
+      print('Error closing existing session: $e');
+      _setLoading(false, 'خطأ في إغلاق الجلسة: $e');
+      return false;
+    }
+  }
+
+  /// Close current POS session
+  Future<bool> closeSession({
+    double? cashBalance,
+    String? notes,
+  }) async {
+    if (_currentSession == null) {
+      print('No active session to close');
+      return false;
+    }
+
+    try {
+      _setLoading(true, 'Closing session...');
+      
+      // Prepare closing data
+      final closingData = SessionClosingData(
+        cashRegisterBalanceEndReal: cashBalance,
+        closingNotes: notes,
+      );
+
+      // Close session through session manager
+      final result = await _backendService.sessionManager.closeSessionWithValidation(
+        _currentSession!.id,
+        closingData,
+      );
+
+      if (result.success) {
+        // Clear current session data
         _clearSessionData();
         _setLoading(false, 'Session closed successfully');
         return true;
@@ -281,254 +560,95 @@ class EnhancedPOSProvider with ChangeNotifier {
         return false;
       }
     } catch (e) {
-      _setLoading(false, 'Session closing error: $e');
+      _setLoading(false, 'Error closing session: $e');
+      print('Error closing session: $e');
       return false;
     }
   }
 
-  /// Create new order
-  Future<bool> createOrder({ResPartner? customer, String? note}) async {
-    if (_currentSession == null) {
-      _setLoading(false, 'No active session');
-      return false;
-    }
+  /// Setup stream listeners for real-time updates
+  void _setupListeners() {
+    // Backend service streams
+    _backendService.loadingStream.listen((loading) {
+      _isLoading = loading;
+      _safeNotifyListeners();
+    });
 
-    try {
-      final result = await _backendService.orderManager.createOrder(
-        session: _currentSession!,
-        partnerId: customer?.id,
-        note: note,
-      );
+    _backendService.statusStream.listen((status) {
+      _statusMessage = status;
+      _safeNotifyListeners();
+    });
 
-      if (result.success) {
-        _selectedCustomer = customer;
-        notifyListeners();
-        return true;
-      } else {
-        _setLoading(false, 'Failed to create order: ${result.error}');
-        return false;
-      }
-    } catch (e) {
-      _setLoading(false, 'Order creation error: $e');
-      return false;
-    }
+    _backendService.productsStream.listen((products) {
+      _products = products;
+      _safeNotifyListeners();
+    });
+
+    _backendService.categoriesStream.listen((categories) {
+      _categories = categories;
+      _safeNotifyListeners();
+    });
+
+    _backendService.customersStream.listen((customers) {
+      _customers = customers;
+      _safeNotifyListeners();
+    });
+
+    // API client streams
+    _backendService.apiClient.connectionStream.listen((connected) {
+      _isConnected = connected;
+      _safeNotifyListeners();
+    });
+
+    _backendService.apiClient.authStream.listen((authenticated) {
+      _isAuthenticated = authenticated;
+      _safeNotifyListeners();
+    });
+
+    // Hybrid authentication streams
+    _hybridAuth.authModeStream.listen((mode) {
+      _currentAuthMode = mode;
+      _isOnlineMode = mode == AuthMode.online;
+      _safeNotifyListeners();
+    });
+
+    _hybridAuth.authStateStream.listen((authenticated) {
+      _isAuthenticated = authenticated;
+      _safeNotifyListeners();
+    });
+
+    _hybridAuth.authStatusStream.listen((status) {
+      _statusMessage = status;
+      _safeNotifyListeners();
+    });
+
+    // Session manager streams
+    _backendService.sessionManager.sessionStream.listen((session) {
+      _currentSession = session;
+      _safeNotifyListeners();
+    });
+
+    // Order manager streams
+    _backendService.orderManager.orderStream.listen((order) {
+      _currentOrder = order;
+      _safeNotifyListeners();
+    });
+
+    _backendService.orderManager.linesStream.listen((lines) {
+      _orderLines = lines;
+      _safeNotifyListeners();
+    });
+
+    _backendService.orderManager.paymentsStream.listen((payments) {
+      _payments = payments;
+      _safeNotifyListeners();
+    });
   }
 
-  /// Add product to order
-  Future<bool> addProductToOrder(
-    ProductProduct product, {
-    double quantity = 1.0,
-    double? customPrice,
-    double discount = 0.0,
-    String? note,
-  }) async {
-    if (!hasActiveOrder) {
-      // Create order if none exists
-      final orderCreated = await createOrder();
-      if (!orderCreated) return false;
-    }
-
-    try {
-      final result = await _backendService.orderManager.addProductToOrder(
-        product: product,
-        quantity: quantity,
-        customPrice: customPrice,
-        discount: discount,
-        customerNote: note,
-      );
-
-      return result.success;
-    } catch (e) {
-      _setLoading(false, 'Failed to add product: $e');
-      return false;
-    }
-  }
-
-  /// Update order line quantity
-  Future<bool> updateOrderLineQuantity(int lineIndex, double quantity) async {
-    try {
-      final result = await _backendService.orderManager.updateOrderLineQuantity(
-        lineIndex,
-        quantity,
-      );
-      return result.success;
-    } catch (e) {
-      _setLoading(false, 'Failed to update quantity: $e');
-      return false;
-    }
-  }
-
-  /// Remove order line
-  Future<bool> removeOrderLine(int lineIndex) async {
-    return await updateOrderLineQuantity(lineIndex, 0);
-  }
-
-  /// Apply discount to order line
-  Future<bool> applyLineDiscount(int lineIndex, double discount) async {
-    try {
-      final result = await _backendService.orderManager.applyLineDiscount(
-        lineIndex,
-        discount,
-      );
-      return result.success;
-    } catch (e) {
-      _setLoading(false, 'Failed to apply discount: $e');
-      return false;
-    }
-  }
-
-  /// Add payment to order
-  Future<bool> addPayment({
-    required POSPaymentMethod paymentMethod,
-    required double amount,
-    String? reference,
-    Map<String, String>? cardInfo,
-  }) async {
-    try {
-      final result = await _backendService.orderManager.addPayment(
-        paymentMethodId: paymentMethod.id,
-        amount: amount,
-        paymentRefNo: reference,
-        cardType: cardInfo?['type'],
-        cardBrand: cardInfo?['brand'],
-        cardNo: cardInfo?['number'],
-        cardholderName: cardInfo?['holder'],
-      );
-      return result.success;
-    } catch (e) {
-      _setLoading(false, 'Failed to add payment: $e');
-      return false;
-    }
-  }
-
-  /// Remove payment
-  Future<bool> removePayment(int paymentIndex) async {
-    try {
-      final result = await _backendService.orderManager.removePayment(paymentIndex);
-      return result.success;
-    } catch (e) {
-      _setLoading(false, 'Failed to remove payment: $e');
-      return false;
-    }
-  }
-
-  /// Finalize order
-  Future<bool> finalizeOrder() async {
-    try {
-      _setLoading(true, 'Finalizing order...');
-
-      final result = await _backendService.orderManager.finalizeOrder();
-
-      if (result.success) {
-        _setLoading(false, 'Order completed successfully');
-        return true;
-      } else {
-        _setLoading(false, 'Failed to finalize order: ${result.error}');
-        return false;
-      }
-    } catch (e) {
-      _setLoading(false, 'Order finalization error: $e');
-      return false;
-    }
-  }
-
-  /// Cancel current order
-  Future<bool> cancelOrder() async {
-    try {
-      final result = await _backendService.orderManager.cancelOrder();
-      if (result.success) {
-        _selectedCustomer = null;
-        notifyListeners();
-      }
-      return result.success;
-    } catch (e) {
-      _setLoading(false, 'Failed to cancel order: $e');
-      return false;
-    }
-  }
-
-  /// Select category for filtering products
-  void selectCategory(String category) {
-    _selectedCategory = category;
-    notifyListeners();
-  }
-
-  /// Set search query for products
-  void setSearchQuery(String query) {
-    _searchQuery = query;
-    notifyListeners();
-  }
-
-  /// Get filtered products based on category and search
-  List<ProductProduct> getFilteredProducts() {
-    List<ProductProduct> filtered = _products;
-
-    // Filter by category
-    if (_selectedCategory.isNotEmpty && _selectedCategory != 'All') {
-      // Note: This would require category filtering logic based on product categories
-      // For now, return all products
-    }
-
-    // Filter by search query
-    if (_searchQuery.isNotEmpty) {
-      filtered = filtered.where((product) =>
-        product.displayName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-        (product.barcode?.contains(_searchQuery) ?? false)
-      ).toList();
-    }
-
-    return filtered;
-  }
-
-  /// Search products
-  Future<List<ProductProduct>> searchProducts(String query) async {
-    return await _backendService.searchProducts(query);
-  }
-
-  /// Get product by barcode
-  Future<ProductProduct?> getProductByBarcode(String barcode) async {
-    return await _backendService.getProductByBarcode(barcode);
-  }
-
-  /// Select customer
-  void selectCustomer(ResPartner? customer) {
-    _selectedCustomer = customer;
-    notifyListeners();
-  }
-
-  /// Search customers
-  Future<List<ResPartner>> searchCustomers(String query) async {
-    return await _backendService.searchCustomers(query);
-  }
-
-  /// Create new customer
-  Future<ResPartner?> createCustomer(Map<String, dynamic> customerData) async {
-    try {
-      final result = await _backendService.createCustomer(customerData);
-      if (result.success) {
-        return result.customer;
-      }
-      return null;
-    } catch (e) {
-      _setLoading(false, 'Failed to create customer: $e');
-      return null;
-    }
-  }
-
-  /// Logout user
-  Future<void> logout() async {
-    try {
-      _setLoading(true, 'Logging out...');
-
-      await _backendService.logout();
-
-      // Clear all state
-      _clearAllData();
-      
-      _setLoading(false, 'Logged out successfully');
-    } catch (e) {
-      _setLoading(false, 'Logout error: $e');
-    }
+  /// Select POS configuration
+  void selectConfig(POSConfig config) {
+    _selectedConfig = config;
+    _safeNotifyListeners();
   }
 
   /// Clear session data
@@ -537,71 +657,403 @@ class EnhancedPOSProvider with ChangeNotifier {
     _currentOrder = null;
     _orderLines.clear();
     _payments.clear();
-    _selectedCustomer = null;
-    _products.clear();
-    _categories.clear();
-    _customers.clear();
     _paymentMethods.clear();
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
-  /// Clear all data
+  /// Clear all provider data
   void _clearAllData() {
+    _isConnected = false;
+    _isAuthenticated = false;
     _currentUser = null;
     _availableConfigs.clear();
     _selectedConfig = null;
+    _products.clear();
+    _categories.clear();
+    _customers.clear();
+    _selectedCategory = '';
+    _searchQuery = '';
+    _selectedCustomer = null;
     _clearSessionData();
   }
 
-  /// Set loading state and status
+  /// Utility methods
   void _setLoading(bool loading, String status) {
     _isLoading = loading;
     _statusMessage = status;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
-  /// Get order summary
-  OrderSummary getOrderSummary() {
-    return OrderSummary(
-      subtotal: subtotal,
-      taxAmount: taxAmount,
-      total: total,
-      paid: totalPaid,
-      change: changeAmount,
-      remaining: remainingAmount > 0 ? remainingAmount : 0.0,
-      itemCount: _orderLines.fold(0.0, (sum, line) => sum + line.qty).round(),
-    );
+  /// Add product to current order
+  Future<bool> addProductToCurrentOrder(ProductProduct product, double quantity) async {
+    try {
+      final result = await _backendService.orderManager.addProductToOrder(
+        product: product,
+        quantity: quantity,
+      );
+
+      if (result.success) {
+        print('Product added to order successfully: ${product.displayName}');
+        return true;
+      } else {
+        print('Failed to add product to order: ${result.error}');
+        return false;
+      }
+    } catch (e) {
+      print('Error adding product to order: $e');
+      return false;
+    }
   }
 
-  /// Dispose resources
-  @override
-  void dispose() {
-    _backendService.dispose();
-    super.dispose();
+  /// Select category for filtering products
+  void selectCategory(POSCategory? category) {
+    _selectedCategory = category?.name ?? '';
+    _safeNotifyListeners();
+  }
+
+  /// Get selected category name
+  String get selectedCategoryName => _selectedCategory;
+
+  /// Get filtered products based on selected category
+  List<ProductProduct> getFilteredProducts() {
+    if (_selectedCategory.isEmpty || _selectedCategory == 'الكل') {
+      return _products;
+    }
+    
+    // Find the selected category ID
+    try {
+      final selectedCat = _categories.firstWhere(
+        (cat) => cat.name == _selectedCategory,
+      );
+      
+      // Filter products by category
+      return _products.where((product) {
+        // Check if product belongs to the selected category
+        return product.posCategIds.contains(selectedCat.id);
+      }).toList();
+    } catch (e) {
+      // If category not found, return all products
+      print('Warning: Category "$_selectedCategory" not found. Returning all products.');
+      return _products;
+    }
+  }
+
+  /// Remove order line by index
+  Future<bool> removeOrderLine(int index) async {
+    if (index < 0 || index >= _orderLines.length) {
+      print('Invalid order line index: $index');
+      return false;
+    }
+
+    try {
+      final result = await _backendService.orderManager.removeOrderLine(index);
+      
+      if (result.success) {
+        print('Order line removed successfully');
+        return true;
+      } else {
+        print('Failed to remove order line: ${result.error}');
+        return false;
+      }
+    } catch (e) {
+      print('Error removing order line: $e');
+      return false;
+    }
+  }
+
+  /// Update order line quantity
+  Future<bool> updateOrderLineQuantity(int index, double quantity) async {
+    if (index < 0 || index >= _orderLines.length) {
+      print('Invalid order line index: $index');
+      return false;
+    }
+
+    if (quantity <= 0) {
+      return removeOrderLine(index);
+    }
+
+    try {
+      final result = await _backendService.orderManager.updateOrderLineQuantity(
+        index,
+        quantity,
+      );
+      
+      if (result.success) {
+        print('Order line quantity updated successfully');
+        return true;
+      } else {
+        print('Failed to update order line quantity: ${result.error}');
+        return false;
+      }
+    } catch (e) {
+      print('Error updating order line quantity: $e');
+      return false;
+    }
+  }
+
+  /// Add payment to current order
+  Future<bool> addPayment(String methodName, double amount) async {
+    if (_currentOrder == null) {
+      print('No active order to add payment to');
+      return false;
+    }
+
+    try {
+      // Find payment method by name
+      final paymentMethod = _paymentMethods.firstWhere(
+        (method) => method.name.toLowerCase() == methodName.toLowerCase(),
+        orElse: () => POSPaymentMethod(
+          id: 0, // Temporary ID for offline mode
+          name: methodName,
+          companyId: 1,
+        ),
+      );
+
+      final result = await _backendService.orderManager.addPayment(
+        paymentMethodId: paymentMethod.id,
+        amount: amount,
+      );
+
+      if (result.success) {
+        print('Payment added successfully: $methodName - $amount');
+        return true;
+      } else {
+        print('Failed to add payment: ${result.error}');
+        return false;
+      }
+    } catch (e) {
+      print('Error adding payment: $e');
+      return false;
+    }
+  }
+
+  /// Remove payment from current order
+  Future<bool> removePayment(String methodName) async {
+    if (_currentOrder == null) {
+      print('No active order to remove payment from');
+      return false;
+    }
+
+    try {
+      // Find the payment index by method name
+      int paymentIndex = -1;
+      for (int i = 0; i < _payments.length; i++) {
+        // Assuming we need to match by payment method name
+        // This might need adjustment based on actual POSPayment structure
+        if (_payments[i].amount > 0) { // Simplified logic for now
+          paymentIndex = i;
+          break;
+        }
+      }
+
+      if (paymentIndex == -1) {
+        print('Payment not found for method: $methodName');
+        return false;
+      }
+
+      final result = await _backendService.orderManager.removePayment(paymentIndex);
+
+      if (result.success) {
+        print('Payment removed successfully: $methodName');
+        return true;
+      } else {
+        print('Failed to remove payment: ${result.error}');
+        return false;
+      }
+    } catch (e) {
+      print('Error removing payment: $e');
+      return false;
+    }
+  }
+
+  /// Get payments as a map for compatibility with old payment screen
+  Map<String, double> get paymentsMap {
+    final Map<String, double> paymentsByMethod = {};
+    
+    for (final payment in _payments) {
+      // Find the payment method name for this payment
+      final methodName = _getPaymentMethodName(payment);
+      paymentsByMethod[methodName] = (paymentsByMethod[methodName] ?? 0.0) + payment.amount;
+    }
+    
+    return paymentsByMethod;
+  }
+
+  /// Helper method to get payment method name from payment
+  String _getPaymentMethodName(POSPayment payment) {
+    try {
+      final method = _paymentMethods.firstWhere(
+        (m) => m.id == payment.paymentMethodId,
+        orElse: () => POSPaymentMethod(
+          id: payment.paymentMethodId, 
+          name: 'Unknown Method',
+          companyId: 1,
+        ),
+      );
+      return method.name;
+    } catch (e) {
+      return 'Unknown Method';
+    }
+  }
+
+  /// Validate and finalize order (send to Odoo backend)
+  Future<OrderValidationResult> validateOrder({
+    bool generateInvoice = false,
+    int? customerId,
+  }) async {
+    try {
+      // Ensure provider is initialized and authenticated
+      if (!_isInitialized || !_isAuthenticated) {
+        return OrderValidationResult(
+          success: false,
+          error: 'System not ready. Please login first.',
+        );
+      }
+
+      // Check if there's an active order
+      if (_currentOrder == null) {
+        return OrderValidationResult(
+          success: false,
+          error: 'لا يوجد طلب نشط للمعالجة',
+        );
+      }
+
+      // Check if order has items
+      if (_orderLines.isEmpty) {
+        return OrderValidationResult(
+          success: false,
+          error: 'الطلب فارغ. يرجى إضافة منتجات قبل المعالجة',
+        );
+      }
+
+      // Check if payment is complete
+      final totalPaid = _payments.fold(0.0, (sum, payment) => sum + payment.amount);
+      if (totalPaid < _currentOrder!.amountTotal) {
+        return OrderValidationResult(
+          success: false,
+          error: 'الدفعة غير مكتملة. المطلوب: ${_currentOrder!.amountTotal.toStringAsFixed(2)}, المدفوع: ${totalPaid.toStringAsFixed(2)}',
+        );
+      }
+
+      _setLoading(true, 'جاري معالجة الطلب وإرساله إلى Odoo...');
+
+      // Update order with customer and invoice settings if provided
+      if (customerId != null || generateInvoice) {
+        _currentOrder = _currentOrder!.copyWith(
+          partnerId: customerId ?? _currentOrder!.partnerId,
+          toInvoice: generateInvoice,
+        );
+      }
+
+      // Finalize order through order manager
+      final result = await _backendService.orderManager.finalizeOrder();
+
+      if (result.success) {
+        _setLoading(false, 'تم إرسال الطلب بنجاح إلى Odoo');
+        
+        // Clear current order data since it's been finalized
+        _currentOrder = null;
+        _orderLines.clear();
+        _payments.clear();
+        _selectedCustomer = null;
+        _safeNotifyListeners();
+
+        return OrderValidationResult(
+          success: true,
+          message: 'تم إرسال الطلب بنجاح إلى النظام',
+          order: result.order,
+        );
+      } else {
+        _setLoading(false, 'فشل في إرسال الطلب إلى Odoo');
+        return OrderValidationResult(
+          success: false,
+          error: result.error ?? 'فشل في معالجة الطلب',
+        );
+      }
+    } catch (e) {
+      _setLoading(false, 'خطأ في معالجة الطلب');
+      print('Error validating order: $e');
+      return OrderValidationResult(
+        success: false,
+        error: 'حدث خطأ غير متوقع: $e',
+      );
+    }
+  }
+
+  /// Get attribute names from attribute value IDs
+  Future<List<String>> getAttributeValueNames(List<int> attributeValueIds) async {
+    if (attributeValueIds.isEmpty) return [];
+    
+    try {
+      // This is a simplified implementation for demo purposes
+      // In a real implementation, you would fetch from the backend service
+      List<String> names = [];
+      
+      // Map some common attribute value IDs to names for demo
+      final Map<int, String> demoAttributeNames = {
+        1: 'البطاطس المقلية البلجيكية',
+        2: 'بطاطس حلوة مقلية',
+        3: 'البطاطس الحلوة المهروسة',
+        4: 'البطاطس بالزعتر',
+        5: 'خضروات مشوية',
+        6: 'صغير',
+        7: 'متوسط',
+        8: 'كبير',
+        9: 'أحمر',
+        10: 'أزرق',
+        11: 'أخضر',
+        12: 'أسود',
+        13: 'أبيض',
+      };
+      
+      for (int id in attributeValueIds) {
+        if (demoAttributeNames.containsKey(id)) {
+          names.add(demoAttributeNames[id]!);
+        } else {
+          names.add('خاصية $id');
+        }
+      }
+      
+      return names;
+    } catch (e) {
+      print('Error getting attribute names: $e');
+      return attributeValueIds.map((id) => 'خاصية $id').toList();
+    }
+  }
+
+  /// Get formatted attribute text for display
+  Future<String> getFormattedAttributeText(List<int> attributeValueIds) async {
+    if (attributeValueIds.isEmpty) return '';
+    
+    final names = await getAttributeValueNames(attributeValueIds);
+    if (names.isEmpty) return '';
+    
+    // Join names with comma for display
+    return ' (${names.join(', ')})';
+  }
+
+  void _safeNotifyListeners() {
+    if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifyListeners();
+      });
+    } else {
+      notifyListeners();
+    }
   }
 }
 
-/// Order summary class for UI display
-class OrderSummary {
-  final double subtotal;
-  final double taxAmount;
-  final double total;
-  final double paid;
-  final double change;
-  final double remaining;
-  final int itemCount;
+/// Result of order validation operation
+class OrderValidationResult {
+  final bool success;
+  final String? error;
+  final String? message;
+  final POSOrder? order;
 
-  OrderSummary({
-    required this.subtotal,
-    required this.taxAmount,
-    required this.total,
-    required this.paid,
-    required this.change,
-    required this.remaining,
-    required this.itemCount,
+  OrderValidationResult({
+    required this.success,
+    this.error,
+    this.message,
+    this.order,
   });
-
-  bool get isFullyPaid => remaining <= 0.0;
-  bool get hasChange => change > 0.0;
-  bool get canFinalize => itemCount > 0 && isFullyPaid;
 }

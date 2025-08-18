@@ -21,8 +21,6 @@ class POSOrder {
   final int? partnerId;
   @JsonKey(name: 'user_id')
   final int userId;
-  @JsonKey(name: 'salesman_id')
-  final int? salesmanId;
   
   // Timing
   @JsonKey(name: 'date_order')
@@ -50,8 +48,6 @@ class POSOrder {
   final POSOrderState state;
   @JsonKey(name: 'to_invoice')
   final bool toInvoice;
-  @JsonKey(name: 'is_invoiced')
-  final bool isInvoiced;
   @JsonKey(name: 'is_tipped')
   final bool isTipped;
   @JsonKey(name: 'tip_amount')
@@ -60,17 +56,14 @@ class POSOrder {
   // Additional Settings
   @JsonKey(name: 'sequence_number')
   final int sequenceNumber;
-  @JsonKey(name: 'tracking_number')
-  final String? trackingNumber;
   @JsonKey(name: 'fiscal_position_id')
   final int? fiscalPositionId;
   @JsonKey(name: 'pricelist_id')
   final int pricelistId;
-  final String? note;
+  @JsonKey(name: 'general_note')
+  final String? generalNote;
   @JsonKey(name: 'nb_print')
   final int nbPrint;
-  @JsonKey(name: 'pos_session_id')
-  final int? posSessionId;
   @JsonKey(name: 'ticket_code')
   final String? ticketCode;
   @JsonKey(name: 'access_token')
@@ -99,7 +92,6 @@ class POSOrder {
     required this.companyId,
     this.partnerId,
     required this.userId,
-    this.salesmanId,
     required this.dateOrder,
     required this.createDate,
     this.writeDate,
@@ -111,16 +103,13 @@ class POSOrder {
     this.currencyRate = 1.0,
     this.state = POSOrderState.draft,
     this.toInvoice = false,
-    this.isInvoiced = false,
     this.isTipped = false,
     this.tipAmount = 0.0,
     required this.sequenceNumber,
-    this.trackingNumber,
     this.fiscalPositionId,
     required this.pricelistId,
-    this.note,
+    this.generalNote,
     this.nbPrint = 0,
-    this.posSessionId,
     this.ticketCode,
     this.accessToken,
     this.lines = const [],
@@ -133,6 +122,32 @@ class POSOrder {
 
   factory POSOrder.fromJson(Map<String, dynamic> json) => _$POSOrderFromJson(json);
   Map<String, dynamic> toJson() => _$POSOrderToJson(this);
+  
+  /// Convert to JSON for server submission (filters out incompatible fields)
+  Map<String, dynamic> toServerJson() {
+    final json = toJson();
+    
+    // Remove fields that don't exist in Odoo 18 database schema
+    json.remove('id'); // Remove local ID
+    json.remove('lines'); // These are created separately
+    json.remove('payment_ids'); // These are created separately
+    json.remove('statement_ids'); // Not used in creation
+    json.remove('picking_ids'); // Not used in creation
+    json.remove('invoice_ids'); // Not used in creation
+    json.remove('account_move'); // Not used in creation
+    json.remove('create_date'); // Server will set this
+    json.remove('write_date'); // Server will set this
+    json.remove('nb_print'); // Not needed for creation
+    json.remove('access_token'); // Usually set by server
+    json.remove('is_invoiced'); // Field doesn't exist in Odoo 18
+    json.remove('tracking_number'); // Field doesn't exist in Odoo 18
+    json.remove('pos_session_id'); // Field doesn't exist in Odoo 18 (use session_id instead)
+    
+    // Remove null values to avoid issues
+    json.removeWhere((key, value) => value == null);
+    
+    return json;
+  }
 
   /// Calculate subtotal (amount without tax)
   double get subtotal => amountTotal - amountTax;
@@ -177,7 +192,6 @@ class POSOrder {
     int? companyId,
     int? partnerId,
     int? userId,
-    int? salesmanId,
     DateTime? dateOrder,
     DateTime? createDate,
     DateTime? writeDate,
@@ -189,16 +203,13 @@ class POSOrder {
     double? currencyRate,
     POSOrderState? state,
     bool? toInvoice,
-    bool? isInvoiced,
     bool? isTipped,
     double? tipAmount,
     int? sequenceNumber,
-    String? trackingNumber,
     int? fiscalPositionId,
     int? pricelistId,
-    String? note,
+    String? generalNote,
     int? nbPrint,
-    int? posSessionId,
     String? ticketCode,
     String? accessToken,
     List<int>? lines,
@@ -218,7 +229,6 @@ class POSOrder {
       companyId: companyId ?? this.companyId,
       partnerId: partnerId ?? this.partnerId,
       userId: userId ?? this.userId,
-      salesmanId: salesmanId ?? this.salesmanId,
       dateOrder: dateOrder ?? this.dateOrder,
       createDate: createDate ?? this.createDate,
       writeDate: writeDate ?? this.writeDate,
@@ -230,16 +240,13 @@ class POSOrder {
       currencyRate: currencyRate ?? this.currencyRate,
       state: state ?? this.state,
       toInvoice: toInvoice ?? this.toInvoice,
-      isInvoiced: isInvoiced ?? this.isInvoiced,
       isTipped: isTipped ?? this.isTipped,
       tipAmount: tipAmount ?? this.tipAmount,
       sequenceNumber: sequenceNumber ?? this.sequenceNumber,
-      trackingNumber: trackingNumber ?? this.trackingNumber,
       fiscalPositionId: fiscalPositionId ?? this.fiscalPositionId,
       pricelistId: pricelistId ?? this.pricelistId,
-      note: note ?? this.note,
+      generalNote: generalNote ?? this.generalNote,
       nbPrint: nbPrint ?? this.nbPrint,
-      posSessionId: posSessionId ?? this.posSessionId,
       ticketCode: ticketCode ?? this.ticketCode,
       accessToken: accessToken ?? this.accessToken,
       lines: lines ?? this.lines,

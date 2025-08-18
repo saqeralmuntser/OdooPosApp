@@ -91,11 +91,13 @@ class OrderManager {
         await _saveDraftOrder();
       }
 
-      final orderUuid = _uuid.v4();
+      // Generate unique UUID with timestamp to avoid conflicts
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final orderUuid = '${_uuid.v4()}-$timestamp';
       final sequenceNumber = await _getNextSequenceNumber(session.id);
       
       final order = POSOrder(
-        id: -DateTime.now().millisecondsSinceEpoch, // Temporary negative ID for offline
+        id: -timestamp, // Temporary negative ID for offline
         name: '${session.name}-${sequenceNumber.toString().padLeft(4, '0')}',
         uuid: orderUuid,
         sessionId: session.id,
@@ -134,21 +136,36 @@ class OrderManager {
     double discount = 0.0,
     String? customerNote,
     List<int>? taxIds,
+    List<int>? customAttributeValueIds,
+    List<String>? customAttributeValueNames,
+    List<double>? customAttributeExtraPrices,
   }) async {
     if (_currentOrder == null) {
       return OrderLineResult(success: false, error: 'No active order');
     }
 
     try {
-      // Check if product already exists in order
+      // Check if product with same attributes already exists in order
+      final currentAttributes = customAttributeValueIds ?? [];
+      print('Adding product ${product.displayName} with attributes: $currentAttributes');
+      
       final existingLineIndex = _currentOrderLines.indexWhere(
-        (line) => line.productId == product.id,
+        (line) {
+          final isSameProduct = line.productId == product.id;
+          final isSameAttributes = _attributeListsEqual(line.customAttributeValueIds, currentAttributes);
+          print('Comparing with existing line: productId=${line.productId}, attributes=${line.customAttributeValueIds}');
+          print('Same product: $isSameProduct, Same attributes: $isSameAttributes');
+          return isSameProduct && isSameAttributes;
+        },
       );
+      
+      print('Existing line index: $existingLineIndex');
 
       POSOrderLine orderLine;
 
       if (existingLineIndex >= 0) {
-        // Update existing line
+        // Update existing line (same product with same attributes)
+        print('Found existing line with same product and attributes - updating quantity');
         final existingLine = _currentOrderLines[existingLineIndex];
         final newQuantity = existingLine.qty + quantity;
         
@@ -159,11 +176,15 @@ class OrderManager {
           discount: discount,
           customerNote: customerNote,
           taxIds: taxIds,
+          customAttributeValueIds: customAttributeValueIds,
+          customAttributeValueNames: customAttributeValueNames,
+          customAttributeExtraPrices: customAttributeExtraPrices,
         );
         
         _currentOrderLines[existingLineIndex] = orderLine;
       } else {
-        // Create new line
+        // Create new line (different product or different attributes)
+        print('Creating new line for product with different attributes');
         orderLine = await _createOrderLine(
           product: product,
           quantity: quantity,
@@ -171,6 +192,9 @@ class OrderManager {
           discount: discount,
           customerNote: customerNote,
           taxIds: taxIds,
+          customAttributeValueIds: customAttributeValueIds,
+          customAttributeValueNames: customAttributeValueNames,
+          customAttributeExtraPrices: customAttributeExtraPrices,
         );
         
         _currentOrderLines.add(orderLine);
@@ -194,8 +218,21 @@ class OrderManager {
     double discount = 0.0,
     String? customerNote,
     List<int>? taxIds,
+    List<int>? customAttributeValueIds,
+    List<String>? customAttributeValueNames,
+    List<double>? customAttributeExtraPrices,
   }) async {
-    final priceUnit = customPrice ?? product.finalPrice;
+    // Calculate base price plus attribute extra prices
+    double basePrice = customPrice ?? product.finalPrice;
+    double attributeExtraTotal = 0.0;
+    
+    // Add attribute extra prices
+    if (customAttributeExtraPrices != null && customAttributeExtraPrices.isNotEmpty) {
+      attributeExtraTotal = customAttributeExtraPrices.fold(0.0, (sum, price) => sum + price);
+      print('Attribute extra prices: $customAttributeExtraPrices, total: $attributeExtraTotal');
+    }
+    
+    final priceUnit = basePrice + attributeExtraTotal;
     final subtotalBeforeDiscount = priceUnit * quantity;
     final discountAmount = subtotalBeforeDiscount * (discount / 100);
     final priceSubtotal = subtotalBeforeDiscount - discountAmount;
@@ -206,7 +243,7 @@ class OrderManager {
     final priceSubtotalIncl = priceSubtotal + taxAmount;
 
     return POSOrderLine(
-      id: -DateTime.now().millisecondsSinceEpoch, // Temporary negative ID
+      id: -DateTime.now().microsecondsSinceEpoch, // Temporary negative ID with higher precision
       orderId: _currentOrder!.id,
       productId: product.id,
       uuid: _uuid.v4(),
@@ -220,6 +257,9 @@ class OrderManager {
       customerNote: customerNote,
       totalCost: product.standardPrice * quantity,
       taxIds: taxes.map((tax) => tax.id).toList(),
+      customAttributeValueIds: customAttributeValueIds ?? [],
+      customAttributeValueNames: customAttributeValueNames ?? [],
+      customAttributeExtraPrices: customAttributeExtraPrices ?? [],
     );
   }
 
@@ -253,6 +293,9 @@ class OrderManager {
           discount: currentLine.discount,
           customerNote: currentLine.customerNote,
           taxIds: currentLine.taxIds,
+          customAttributeValueIds: currentLine.customAttributeValueIds,
+          customAttributeValueNames: currentLine.customAttributeValueNames,
+          customAttributeExtraPrices: currentLine.customAttributeExtraPrices,
         );
 
         _currentOrderLines[lineIndex] = updatedLine;
@@ -298,6 +341,9 @@ class OrderManager {
         discount: discount,
         customerNote: currentLine.customerNote,
         taxIds: currentLine.taxIds,
+        customAttributeValueIds: currentLine.customAttributeValueIds,
+        customAttributeValueNames: currentLine.customAttributeValueNames,
+        customAttributeExtraPrices: currentLine.customAttributeExtraPrices,
       );
 
       _currentOrderLines[lineIndex] = updatedLine;
@@ -532,26 +578,42 @@ class OrderManager {
     if (_currentOrder == null) return;
 
     try {
-      // Create order on server
-      final orderData = _currentOrder!.toJson();
-      orderData.remove('id'); // Remove local ID
+      // Create order on server using filtered data
+      final orderData = _currentOrder!.toServerJson();
+      
+      print('=== Creating POS Order ===');
+      print('Order data keys: ${orderData.keys.toList()}');
+      print('Order data: $orderData');
       
       final serverId = await _apiClient.create('pos.order', orderData);
+      print('✅ Order created successfully with server ID: $serverId');
       
       // Create order lines
-      for (final line in _currentOrderLines) {
-        final lineData = line.toJson();
-        lineData.remove('id'); // Remove local ID
+      print('=== Creating Order Lines (${_currentOrderLines.length}) ===');
+      for (int i = 0; i < _currentOrderLines.length; i++) {
+        final line = _currentOrderLines[i];
+        final lineData = line.toServerJson();
         lineData['order_id'] = serverId;
+        
+        print('Line ${i + 1} data keys: ${lineData.keys.toList()}');
+        print('Line ${i + 1} data: $lineData');
+        
         await _apiClient.create('pos.order.line', lineData);
+        print('✅ Order line ${i + 1} created successfully');
       }
       
       // Create payments
-      for (final payment in _currentPayments) {
-        final paymentData = payment.toJson();
-        paymentData.remove('id'); // Remove local ID
+      print('=== Creating Payments (${_currentPayments.length}) ===');
+      for (int i = 0; i < _currentPayments.length; i++) {
+        final payment = _currentPayments[i];
+        final paymentData = payment.toServerJson();
         paymentData['pos_order_id'] = serverId;
+        
+        print('Payment ${i + 1} data keys: ${paymentData.keys.toList()}');
+        print('Payment ${i + 1} data: $paymentData');
+        
         await _apiClient.create('pos.payment', paymentData);
+        print('✅ Payment ${i + 1} created successfully');
       }
       
       print('Order synced to server with ID: $serverId');
@@ -568,8 +630,19 @@ class OrderManager {
         // Use provided tax IDs
         final taxes = <AccountTax>[];
         for (final taxId in taxIds) {
-          final taxData = await _apiClient.read('account.tax', taxId);
-          taxes.add(AccountTax.fromJson(taxData));
+          try {
+            final taxData = await _apiClient.read('account.tax', taxId);
+            
+            // Validate tax data before parsing
+            if (_isValidTaxData(taxData)) {
+              taxes.add(AccountTax.fromJson(taxData));
+            } else {
+              print('Warning: Skipping invalid tax data for ID $taxId: $taxData');
+            }
+          } catch (taxError) {
+            print('Warning: Failed to load tax $taxId: $taxError');
+            // Continue with other taxes rather than failing completely
+          }
         }
         return taxes;
       } else {
@@ -579,15 +652,70 @@ class OrderManager {
         
         final taxes = <AccountTax>[];
         for (final taxId in defaultTaxIds) {
-          final taxData = await _apiClient.read('account.tax', taxId);
-          taxes.add(AccountTax.fromJson(taxData));
+          try {
+            final taxData = await _apiClient.read('account.tax', taxId);
+            
+            // Validate tax data before parsing
+            if (_isValidTaxData(taxData)) {
+              taxes.add(AccountTax.fromJson(taxData));
+            } else {
+              print('Warning: Skipping invalid tax data for ID $taxId: $taxData');
+            }
+          } catch (taxError) {
+            print('Warning: Failed to load tax $taxId: $taxError');
+            // Continue with other taxes rather than failing completely
+          }
         }
+        
+        // If no valid taxes found, return default tax
+        if (taxes.isEmpty) {
+          print('Warning: No valid taxes found for product $productId, using default tax');
+          return [_createDefaultTax()];
+        }
+        
         return taxes;
       }
     } catch (e) {
       print('Error getting taxes for product: $e');
       return [];
     }
+  }
+
+  /// Create a default tax when no valid taxes are found
+  AccountTax _createDefaultTax() {
+    return AccountTax(
+      id: -1, // Negative ID to indicate it's a default tax
+      name: 'Default Tax',
+      amountType: TaxAmountType.percent,
+      amount: 15.0, // Default 15% VAT rate
+      typeTaxUse: TaxTypeUse.sale,
+      priceInclude: false,
+      includeBaseAmount: false,
+      isBaseAffected: false,
+      sequence: 0,
+      companyId: 1,
+      taxGroupId: null,
+      childrenTaxIds: [],
+      invoiceRepartitionLineIds: [],
+      refundRepartitionLineIds: [],
+    );
+  }
+
+  /// Validate tax data before parsing
+  bool _isValidTaxData(Map<String, dynamic> taxData) {
+    final typeTaxUse = taxData['type_tax_use'];
+    final amountType = taxData['amount_type'];
+    
+    // Check if required fields are present and valid
+    if (typeTaxUse == null || amountType == null) {
+      return false;
+    }
+    
+    // Validate enum values
+    final validTypeTaxUse = ['sale', 'purchase', 'none'].contains(typeTaxUse);
+    final validAmountType = ['fixed', 'percent', 'division', 'group'].contains(amountType);
+    
+    return validTypeTaxUse && validAmountType;
   }
 
   /// Calculate tax amount
@@ -632,6 +760,29 @@ class OrderManager {
     } catch (e) {
       return 1;
     }
+  }
+
+  /// Compare two attribute lists for equality
+  bool _attributeListsEqual(List<int> list1, List<int> list2) {
+    // Handle null/empty cases
+    final l1 = list1;
+    final l2 = list2;
+    
+    // Both empty or null - considered equal
+    if (l1.isEmpty && l2.isEmpty) return true;
+    
+    // Different lengths - not equal
+    if (l1.length != l2.length) return false;
+    
+    // Sort both lists and compare element by element
+    final sorted1 = List<int>.from(l1)..sort();
+    final sorted2 = List<int>.from(l2)..sort();
+    
+    for (int i = 0; i < sorted1.length; i++) {
+      if (sorted1[i] != sorted2[i]) return false;
+    }
+    
+    return true;
   }
 
   /// Notify all listeners

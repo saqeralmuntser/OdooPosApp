@@ -1,10 +1,17 @@
 import 'dart:async';
-import 'package:uuid/uuid.dart';
+import 'package:intl/intl.dart';
+
 import '../models/pos_session.dart';
 import '../models/pos_config.dart';
 import '../models/pos_order.dart';
 import '../api/odoo_api_client.dart';
 import '../storage/local_storage.dart';
+
+/// Helper function to format DateTime for Odoo API
+String _formatDateTimeForOdoo(DateTime dateTime) {
+  final formatter = DateFormat('yyyy-MM-dd HH:mm:ss');
+  return formatter.format(dateTime);
+}
 
 /// Session Manager
 /// Handles the complete lifecycle of POS sessions according to Odoo 18 specification
@@ -173,7 +180,7 @@ class SessionManager {
       
       // Get last session for cash balance
       double startingBalance = 0.0;
-      if (config.cashControl) {
+      if (config.cashControl == true) {
         final lastSession = await _getLastSession(config.id);
         startingBalance = lastSession?.cashRegisterBalanceEndReal ?? 0.0;
       }
@@ -189,7 +196,7 @@ class SessionManager {
         'login_number': 0,
         'cash_control': config.cashControl,
         'cash_register_balance_start': startingBalance,
-        'start_at': DateTime.now().toIso8601String(),
+        'start_at': _formatDateTimeForOdoo(DateTime.now()),
       };
 
       final sessionId = await _apiClient.create('pos.session', sessionData);

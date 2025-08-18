@@ -91,6 +91,24 @@ class POSPayment {
 
   factory POSPayment.fromJson(Map<String, dynamic> json) => _$POSPaymentFromJson(json);
   Map<String, dynamic> toJson() => _$POSPaymentToJson(this);
+  
+  /// Convert to JSON for server submission (filters out incompatible fields)
+  Map<String, dynamic> toServerJson() {
+    final json = toJson();
+    
+    // Remove fields that are not needed for server creation or might cause issues
+    json.remove('id'); // Remove local ID
+    json.remove('uuid'); // Remove UUID, not needed for server
+    json.remove('name'); // Usually null and can cause issues
+    json.remove('ticket'); // Usually null for new payments
+    json.remove('payment_status'); // Usually set by server
+    json.remove('account_move_id'); // Set by server
+    
+    // Remove null values to avoid issues
+    json.removeWhere((key, value) => value == null);
+    
+    return json;
+  }
 
   /// Check if payment is successful
   bool get isSuccessful => paymentStatus == 'done' || paymentStatus == 'confirmed';

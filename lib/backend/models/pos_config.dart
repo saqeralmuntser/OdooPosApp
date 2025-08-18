@@ -2,6 +2,37 @@ import 'package:json_annotation/json_annotation.dart';
 
 part 'pos_config.g.dart';
 
+/// Helper function to extract ID from Odoo array format [id, name]
+int _extractIdFromArray(dynamic value) {
+  if (value is List && value.isNotEmpty) {
+    return value[0] as int;
+  } else if (value is int) {
+    return value;
+  }
+  throw FormatException('Invalid ID format: $value');
+}
+
+/// Helper function to extract nullable ID from Odoo array format
+int? _extractNullableIdFromArray(dynamic value) {
+  if (value == false || value == null) {
+    return null;
+  }
+  if (value is List && value.isNotEmpty) {
+    return value[0] as int;
+  } else if (value is int) {
+    return value;
+  }
+  return null;
+}
+
+/// Helper function to handle nullable strings that might be false
+String? _extractNullableString(dynamic value) {
+  if (value == false || value == null) {
+    return null;
+  }
+  return value.toString();
+}
+
 /// pos.config - Point of Sale Configuration
 /// Represents the complete configuration for a POS terminal
 @JsonSerializable()
@@ -11,84 +42,84 @@ class POSConfig {
   final bool active;
   
   // Company and Currency
-  @JsonKey(name: 'company_id')
+  @JsonKey(name: 'company_id', fromJson: _extractIdFromArray)
   final int companyId;
-  @JsonKey(name: 'currency_id')
+  @JsonKey(name: 'currency_id', fromJson: _extractIdFromArray)
   final int currencyId;
   
   // Core Settings
-  @JsonKey(name: 'pricelist_id')
-  final int pricelistId;
-  @JsonKey(name: 'journal_id')
-  final int journalId;
-  @JsonKey(name: 'invoice_journal_id')
+  @JsonKey(name: 'pricelist_id', fromJson: _extractNullableIdFromArray)
+  final int? pricelistId;
+  @JsonKey(name: 'journal_id', fromJson: _extractNullableIdFromArray)
+  final int? journalId;
+  @JsonKey(name: 'invoice_journal_id', fromJson: _extractNullableIdFromArray)
   final int? invoiceJournalId;
-  @JsonKey(name: 'picking_type_id')
+  @JsonKey(name: 'picking_type_id', fromJson: _extractNullableIdFromArray)
   final int? pickingTypeId;
-  @JsonKey(name: 'warehouse_id')
+  @JsonKey(name: 'warehouse_id', fromJson: _extractNullableIdFromArray)
   final int? warehouseId;
   
   // Interface Settings
   @JsonKey(name: 'iface_cashdrawer')
-  final bool ifaceCashdrawer;
+  final bool? ifaceCashdrawer;
   @JsonKey(name: 'iface_electronic_scale')
-  final bool ifaceElectronicScale;
+  final bool? ifaceElectronicScale;
   @JsonKey(name: 'iface_customer_facing_display')
   final String? ifaceCustomerFacingDisplay;
   @JsonKey(name: 'iface_print_auto')
-  final bool ifacePrintAuto;
+  final bool? ifacePrintAuto;
   @JsonKey(name: 'iface_print_skip_screen')
-  final bool ifacePrintSkipScreen;
+  final bool? ifacePrintSkipScreen;
   @JsonKey(name: 'iface_scan_via_proxy')
-  final bool ifaceScanViaProxy;
+  final bool? ifaceScanViaProxy;
   @JsonKey(name: 'iface_big_scrollbars')
-  final bool ifaceBigScrollbars;
+  final bool? ifaceBigScrollbars;
   @JsonKey(name: 'iface_print_via_proxy')
-  final bool ifacePrintViaProxy;
+  final bool? ifacePrintViaProxy;
   
   // Module Settings
   @JsonKey(name: 'module_pos_restaurant')
-  final bool modulePosRestaurant;
+  final bool? modulePosRestaurant;
   @JsonKey(name: 'module_pos_discount')
-  final bool modulePosDiscount;
+  final bool? modulePosDiscount;
   @JsonKey(name: 'module_pos_loyalty')
-  final bool modulePosLoyalty;
+  final bool? modulePosLoyalty;
   @JsonKey(name: 'module_pos_mercury')
-  final bool modulePosMercury;
+  final bool? modulePosMercury;
   
   // Features
   @JsonKey(name: 'use_pricelist')
-  final bool usePricelist;
+  final bool? usePricelist;
   @JsonKey(name: 'group_by')
-  final bool groupBy;
+  final bool? groupBy;
   @JsonKey(name: 'limit_categories')
-  final bool limitCategories;
+  final bool? limitCategories;
   @JsonKey(name: 'restrict_price_control')
-  final bool restrictPriceControl;
+  final bool? restrictPriceControl;
   @JsonKey(name: 'cash_control')
-  final bool cashControl;
+  final bool? cashControl;
   
   // Receipt Settings
-  @JsonKey(name: 'receipt_header')
+  @JsonKey(name: 'receipt_header', fromJson: _extractNullableString)
   final String? receiptHeader;
-  @JsonKey(name: 'receipt_footer')
+  @JsonKey(name: 'receipt_footer', fromJson: _extractNullableString)
   final String? receiptFooter;
   
   // Network Settings
-  @JsonKey(name: 'proxy_ip')
+  @JsonKey(name: 'proxy_ip', fromJson: _extractNullableString)
   final String? proxyIp;
-  @JsonKey(name: 'other_devices')
+  @JsonKey(name: 'other_devices', fromJson: _extractNullableString)
   final String? otherDevices;
   
   // Relationships (stored as IDs)
   @JsonKey(name: 'payment_method_ids')
-  final List<int> paymentMethodIds;
+  final List<int>? paymentMethodIds;
   @JsonKey(name: 'available_pricelist_ids')
-  final List<int> availablePricelistIds;
+  final List<int>? availablePricelistIds;
   @JsonKey(name: 'printer_ids')
-  final List<int> printerIds;
+  final List<int>? printerIds;
   @JsonKey(name: 'iface_available_categ_ids')
-  final List<int> ifaceAvailableCategIds;
+  final List<int>? ifaceAvailableCategIds;
 
   POSConfig({
     required this.id,
@@ -96,36 +127,36 @@ class POSConfig {
     this.active = true,
     required this.companyId,
     required this.currencyId,
-    required this.pricelistId,
-    required this.journalId,
+    this.pricelistId,
+    this.journalId,
     this.invoiceJournalId,
     this.pickingTypeId,
     this.warehouseId,
-    this.ifaceCashdrawer = false,
-    this.ifaceElectronicScale = false,
+    this.ifaceCashdrawer,
+    this.ifaceElectronicScale,
     this.ifaceCustomerFacingDisplay,
-    this.ifacePrintAuto = false,
-    this.ifacePrintSkipScreen = false,
-    this.ifaceScanViaProxy = false,
-    this.ifaceBigScrollbars = false,
-    this.ifacePrintViaProxy = false,
-    this.modulePosRestaurant = false,
-    this.modulePosDiscount = false,
-    this.modulePosLoyalty = false,
-    this.modulePosMercury = false,
-    this.usePricelist = false,
-    this.groupBy = false,
-    this.limitCategories = false,
-    this.restrictPriceControl = false,
-    this.cashControl = false,
+    this.ifacePrintAuto,
+    this.ifacePrintSkipScreen,
+    this.ifaceScanViaProxy,
+    this.ifaceBigScrollbars,
+    this.ifacePrintViaProxy,
+    this.modulePosRestaurant,
+    this.modulePosDiscount,
+    this.modulePosLoyalty,
+    this.modulePosMercury,
+    this.usePricelist,
+    this.groupBy,
+    this.limitCategories,
+    this.restrictPriceControl,
+    this.cashControl,
     this.receiptHeader,
     this.receiptFooter,
     this.proxyIp,
     this.otherDevices,
-    this.paymentMethodIds = const [],
-    this.availablePricelistIds = const [],
-    this.printerIds = const [],
-    this.ifaceAvailableCategIds = const [],
+    this.paymentMethodIds,
+    this.availablePricelistIds,
+    this.printerIds,
+    this.ifaceAvailableCategIds,
   });
 
   factory POSConfig.fromJson(Map<String, dynamic> json) => _$POSConfigFromJson(json);

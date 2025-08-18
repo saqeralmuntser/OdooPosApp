@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import '../models/customer.dart';
+import '../backend/models/res_partner.dart';
 import '../theme/app_theme.dart';
 
 class CustomerFormDialog extends StatefulWidget {
-  final Customer? customer;
-  final Function(Customer) onSave;
+  final ResPartner? customer;
+  final Function(ResPartner) onSave;
 
   const CustomerFormDialog({
     super.key,
@@ -23,28 +23,22 @@ class _CustomerFormDialogState extends State<CustomerFormDialog>
 
   // Form controllers
   late TextEditingController _nameController;
-  late TextEditingController _companyNameController;
   late TextEditingController _jobPositionController;
   late TextEditingController _phoneController;
   late TextEditingController _mobileController;
   late TextEditingController _emailController;
   late TextEditingController _websiteController;
   late TextEditingController _titleController;
-  late TextEditingController _tagsController;
   late TextEditingController _vatNumberController;
 
   // Address controllers
   late TextEditingController _streetController;
-  late TextEditingController _neighborhoodController;
+  late TextEditingController _street2Controller;
   late TextEditingController _cityController;
   late TextEditingController _stateController;
   late TextEditingController _zipController;
-  late TextEditingController _countryController;
-  late TextEditingController _buildingNumberController;
-  late TextEditingController _plotIdentificationController;
 
-  String _selectedType = 'Individual';
-  final List<String> _customerTypes = ['Individual', 'Company'];
+  bool _isCompany = false;
 
   @override
   void initState() {
@@ -57,63 +51,50 @@ class _CustomerFormDialogState extends State<CustomerFormDialog>
     final customer = widget.customer;
     
     _nameController = TextEditingController(text: customer?.name ?? '');
-    _companyNameController = TextEditingController(text: customer?.companyName ?? '');
     _jobPositionController = TextEditingController(text: customer?.jobPosition ?? '');
     _phoneController = TextEditingController(text: customer?.phone ?? '');
     _mobileController = TextEditingController(text: customer?.mobile ?? '');
     _emailController = TextEditingController(text: customer?.email ?? '');
     _websiteController = TextEditingController(text: customer?.website ?? '');
     _titleController = TextEditingController(text: customer?.title ?? '');
-    _tagsController = TextEditingController(text: customer?.tags.join(', ') ?? '');
     _vatNumberController = TextEditingController(text: customer?.vatNumber ?? '');
 
     // Address
-    _streetController = TextEditingController(text: customer?.address?.street ?? '');
-    _neighborhoodController = TextEditingController(text: customer?.address?.neighborhood ?? '');
-    _cityController = TextEditingController(text: customer?.address?.city ?? '');
-    _stateController = TextEditingController(text: customer?.address?.state ?? '');
-    _zipController = TextEditingController(text: customer?.address?.zip ?? '');
-    _countryController = TextEditingController(text: customer?.address?.country ?? '');
-    _buildingNumberController = TextEditingController(text: customer?.address?.buildingNumber ?? '');
-    _plotIdentificationController = TextEditingController(text: customer?.address?.plotIdentification ?? '');
+    _streetController = TextEditingController(text: customer?.street ?? '');
+    _street2Controller = TextEditingController(text: customer?.street2 ?? '');
+    _cityController = TextEditingController(text: customer?.city ?? '');
+    _stateController = TextEditingController(text: customer?.state ?? '');
+    _zipController = TextEditingController(text: customer?.zip ?? '');
 
-    _selectedType = customer?.type ?? 'Individual';
+    _isCompany = customer?.isCompany ?? false;
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     _nameController.dispose();
-    _companyNameController.dispose();
     _jobPositionController.dispose();
     _phoneController.dispose();
     _mobileController.dispose();
     _emailController.dispose();
     _websiteController.dispose();
     _titleController.dispose();
-    _tagsController.dispose();
     _vatNumberController.dispose();
     _streetController.dispose();
-    _neighborhoodController.dispose();
+    _street2Controller.dispose();
     _cityController.dispose();
     _stateController.dispose();
     _zipController.dispose();
-    _countryController.dispose();
-    _buildingNumberController.dispose();
-    _plotIdentificationController.dispose();
     super.dispose();
   }
 
   void _saveCustomer() {
     if (!_formKey.currentState!.validate()) return;
 
-    final customer = Customer(
-      id: widget.customer?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+    final customer = ResPartner(
+      id: widget.customer?.id ?? 0, // For new customers, backend will assign ID
       name: _nameController.text.trim(),
-      type: _selectedType,
-      companyName: _companyNameController.text.trim().isNotEmpty 
-          ? _companyNameController.text.trim() 
-          : null,
+      isCompany: _isCompany,
       jobPosition: _jobPositionController.text.trim().isNotEmpty 
           ? _jobPositionController.text.trim() 
           : null,
@@ -132,22 +113,15 @@ class _CustomerFormDialogState extends State<CustomerFormDialog>
       title: _titleController.text.trim().isNotEmpty 
           ? _titleController.text.trim() 
           : null,
-      tags: _tagsController.text.trim().isNotEmpty 
-          ? _tagsController.text.split(',').map((e) => e.trim()).toList()
-          : [],
       vatNumber: _vatNumberController.text.trim().isNotEmpty 
           ? _vatNumberController.text.trim() 
           : null,
-      address: Address(
-        street: _streetController.text.trim().isNotEmpty ? _streetController.text.trim() : null,
-        neighborhood: _neighborhoodController.text.trim().isNotEmpty ? _neighborhoodController.text.trim() : null,
-        city: _cityController.text.trim().isNotEmpty ? _cityController.text.trim() : null,
-        state: _stateController.text.trim().isNotEmpty ? _stateController.text.trim() : null,
-        zip: _zipController.text.trim().isNotEmpty ? _zipController.text.trim() : null,
-        country: _countryController.text.trim().isNotEmpty ? _countryController.text.trim() : null,
-        buildingNumber: _buildingNumberController.text.trim().isNotEmpty ? _buildingNumberController.text.trim() : null,
-        plotIdentification: _plotIdentificationController.text.trim().isNotEmpty ? _plotIdentificationController.text.trim() : null,
-      ),
+      street: _streetController.text.trim().isNotEmpty ? _streetController.text.trim() : null,
+      street2: _street2Controller.text.trim().isNotEmpty ? _street2Controller.text.trim() : null,
+      city: _cityController.text.trim().isNotEmpty ? _cityController.text.trim() : null,
+      state: _stateController.text.trim().isNotEmpty ? _stateController.text.trim() : null,
+      zip: _zipController.text.trim().isNotEmpty ? _zipController.text.trim() : null,
+      customerRank: 1, // Mark as customer
     );
 
     widget.onSave(customer);
@@ -197,26 +171,42 @@ class _CustomerFormDialogState extends State<CustomerFormDialog>
               child: Row(
                 children: [
                   const Text('Type: '),
-                  ...(_customerTypes.map(
-                    (type) => Padding(
-                      padding: const EdgeInsets.only(right: 16),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Radio<String>(
-                            value: type,
-                            groupValue: _selectedType,
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedType = value!;
-                              });
-                            },
-                          ),
-                          Text(type),
-                        ],
-                      ),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 16),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Radio<bool>(
+                          value: false,
+                          groupValue: _isCompany,
+                          onChanged: (value) {
+                            setState(() {
+                              _isCompany = value!;
+                            });
+                          },
+                        ),
+                        const Text('Individual'),
+                      ],
                     ),
-                  )),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 16),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Radio<bool>(
+                          value: true,
+                          groupValue: _isCompany,
+                          onChanged: (value) {
+                            setState(() {
+                              _isCompany = value!;
+                            });
+                          },
+                        ),
+                        const Text('Company'),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -286,28 +276,18 @@ class _CustomerFormDialogState extends State<CustomerFormDialog>
               Expanded(
                 child: TextFormField(
                   controller: _nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Name *',
-                    hintText: 'e.g. Brandon Freeman',
+                  decoration: InputDecoration(
+                    labelText: _isCompany ? 'Company Name *' : 'Name *',
+                    hintText: _isCompany ? 'e.g. Odoo Inc.' : 'e.g. Brandon Freeman',
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
-                      return 'Name is required';
+                      return _isCompany ? 'Company name is required' : 'Name is required';
                     }
                     return null;
                   },
                 ),
               ),
-              const SizedBox(width: 16),
-              if (_selectedType == 'Company')
-                Expanded(
-                  child: TextFormField(
-                    controller: _companyNameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Company Name',
-                    ),
-                  ),
-                ),
             ],
           ),
           const SizedBox(height: 16),
@@ -395,15 +375,6 @@ class _CustomerFormDialogState extends State<CustomerFormDialog>
               ),
             ],
           ),
-          const SizedBox(height: 16),
-
-          TextFormField(
-            controller: _tagsController,
-            decoration: const InputDecoration(
-              labelText: 'Tags',
-              hintText: 'e.g. "B2B", "VIP", "Consulting", ...',
-            ),
-          ),
           const SizedBox(height: 24),
 
           // Address section
@@ -421,22 +392,30 @@ class _CustomerFormDialogState extends State<CustomerFormDialog>
           ),
           const SizedBox(height: 16),
 
+          TextFormField(
+            controller: _street2Controller,
+            decoration: const InputDecoration(
+              labelText: 'Street 2',
+            ),
+          ),
+          const SizedBox(height: 16),
+
           Row(
             children: [
               Expanded(
                 child: TextFormField(
-                  controller: _neighborhoodController,
+                  controller: _cityController,
                   decoration: const InputDecoration(
-                    labelText: 'Neighborhood',
+                    labelText: 'City',
                   ),
                 ),
               ),
               const SizedBox(width: 16),
               Expanded(
                 child: TextFormField(
-                  controller: _cityController,
+                  controller: _stateController,
                   decoration: const InputDecoration(
-                    labelText: 'City',
+                    labelText: 'State',
                   ),
                 ),
               ),
@@ -446,15 +425,6 @@ class _CustomerFormDialogState extends State<CustomerFormDialog>
 
           Row(
             children: [
-              Expanded(
-                child: TextFormField(
-                  controller: _stateController,
-                  decoration: const InputDecoration(
-                    labelText: 'State',
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
               Expanded(
                 child: TextFormField(
                   controller: _zipController,
@@ -464,37 +434,6 @@ class _CustomerFormDialogState extends State<CustomerFormDialog>
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Expanded(
-                child: TextFormField(
-                  controller: _countryController,
-                  decoration: const InputDecoration(
-                    labelText: 'Country',
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: TextFormField(
-                  controller: _buildingNumberController,
-                  decoration: const InputDecoration(
-                    labelText: 'Building Number',
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          TextFormField(
-            controller: _plotIdentificationController,
-            decoration: const InputDecoration(
-              labelText: 'Plot Identification',
-            ),
           ),
         ],
       ),

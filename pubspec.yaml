@@ -39,6 +39,7 @@ dependencies:
   http: ^1.1.0
   shared_preferences: ^2.2.2
   sqflite: ^2.3.0
+  sqflite_common_ffi: ^2.3.0
   uuid: ^4.2.1
   dio: ^5.4.0
   json_annotation: ^4.8.1

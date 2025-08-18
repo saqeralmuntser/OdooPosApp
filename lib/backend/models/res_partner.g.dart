@@ -1,72 +1,84 @@
-﻿// GENERATED CODE - DO NOT MODIFY BY HAND
-// Simplified version for demo purposes
+// GENERATED CODE - DO NOT MODIFY BY HAND
 
 part of 'res_partner.dart';
 
-// TODO: Run 'dart run build_runner build' to generate proper serialization
+// **************************************************************************
+// JsonSerializableGenerator
+// **************************************************************************
 
-ResPartner _$ResPartnerFromJson(Map<String, dynamic> json) {
-  return ResPartner(
-    id: json['id'] as int,
-    name: json['name'] as String,
-    displayName: json['display_name'] as String?,
-    email: json['email'] as String?,
-    phone: json['phone'] as String?,
-    mobile: json['mobile'] as String?,
-    website: json['website'] as String?,
-    vatNumber: json['vat'] as String?,
-    jobPosition: json['function'] as String?,
-    title: json['title'] as String?,
-    street: json['street'] as String?,
-    street2: json['street2'] as String?,
-    city: json['city'] as String?,
-    state: json['state'] as String?,
-    zip: json['zip'] as String?,
-    countryId: json['country_id'] as int?,
-    isCompany: json['is_company'] as bool? ?? false,
-    parentId: json['parent_id'] as int?,
-    companyId: json['company_id'] as int?,
-    active: json['active'] as bool? ?? true,
-    supplierRank: json['supplier_rank'] as int? ?? 0,
-    customerRank: json['customer_rank'] as int? ?? 0,
-    lang: json['lang'] as String?,
-    tz: json['tz'] as String?,
-    categoryId: (json['category_id'] as List<dynamic>?)?.map((e) => e as int).toList() ?? const [],
-    propertyAccountPositionId: json['property_account_position_id'] as int?,
-    propertyPaymentTermId: json['property_payment_term_id'] as int?,
-    image128: json['image_128'] as String?,
-    hasImage: json['has_image'] as bool? ?? false,
-  );
-}
+ResPartner _$ResPartnerFromJson(Map<String, dynamic> json) => ResPartner(
+  id: (json['id'] as num).toInt(),
+  name: json['name'] as String,
+  displayName: const OdooStringConverter().fromJson(json['display_name']),
+  email: const OdooStringConverter().fromJson(json['email']),
+  phone: const OdooStringConverter().fromJson(json['phone']),
+  mobile: const OdooStringConverter().fromJson(json['mobile']),
+  website: const OdooStringConverter().fromJson(json['website']),
+  vatNumber: const OdooStringConverter().fromJson(json['vat']),
+  jobPosition: const OdooStringConverter().fromJson(json['function']),
+  title: const OdooStringConverter().fromJson(json['title']),
+  street: const OdooStringConverter().fromJson(json['street']),
+  street2: const OdooStringConverter().fromJson(json['street2']),
+  city: const OdooStringConverter().fromJson(json['city']),
+  state: const OdooStringConverter().fromJson(json['state']),
+  zip: const OdooStringConverter().fromJson(json['zip']),
+  countryId: const OdooIntConverter().fromJson(json['country_id']),
+  isCompany: json['is_company'] as bool? ?? false,
+  parentId: const OdooIntConverter().fromJson(json['parent_id']),
+  companyId: const OdooIntConverter().fromJson(json['company_id']),
+  active: json['active'] as bool? ?? true,
+  supplierRank: (json['supplier_rank'] as num?)?.toInt() ?? 0,
+  customerRank: (json['customer_rank'] as num?)?.toInt() ?? 0,
+  lang: const OdooStringConverter().fromJson(json['lang']),
+  tz: const OdooStringConverter().fromJson(json['tz']),
+  categoryId:
+      (json['category_id'] as List<dynamic>?)
+          ?.map((e) => (e as num).toInt())
+          .toList() ??
+      const [],
+  propertyAccountPositionId: const OdooIntConverter().fromJson(
+    json['property_account_position_id'],
+  ),
+  propertyPaymentTermId: const OdooIntConverter().fromJson(
+    json['property_payment_term_id'],
+  ),
+  image128: const OdooStringConverter().fromJson(json['image_128']),
+  hasImage: json['has_image'] as bool? ?? false,
+);
 
-Map<String, dynamic> _$ResPartnerToJson(ResPartner instance) => <String, dynamic>{
+Map<String, dynamic> _$ResPartnerToJson(ResPartner instance) =>
+    <String, dynamic>{
       'id': instance.id,
       'name': instance.name,
-      'display_name': instance.displayName,
-      'email': instance.email,
-      'phone': instance.phone,
-      'mobile': instance.mobile,
-      'website': instance.website,
-      'vat': instance.vatNumber,
-      'function': instance.jobPosition,
-      'title': instance.title,
-      'street': instance.street,
-      'street2': instance.street2,
-      'city': instance.city,
-      'state': instance.state,
-      'zip': instance.zip,
-      'country_id': instance.countryId,
+      'display_name': const OdooStringConverter().toJson(instance.displayName),
+      'email': const OdooStringConverter().toJson(instance.email),
+      'phone': const OdooStringConverter().toJson(instance.phone),
+      'mobile': const OdooStringConverter().toJson(instance.mobile),
+      'website': const OdooStringConverter().toJson(instance.website),
+      'vat': const OdooStringConverter().toJson(instance.vatNumber),
+      'function': const OdooStringConverter().toJson(instance.jobPosition),
+      'title': const OdooStringConverter().toJson(instance.title),
+      'street': const OdooStringConverter().toJson(instance.street),
+      'street2': const OdooStringConverter().toJson(instance.street2),
+      'city': const OdooStringConverter().toJson(instance.city),
+      'state': const OdooStringConverter().toJson(instance.state),
+      'zip': const OdooStringConverter().toJson(instance.zip),
+      'country_id': const OdooIntConverter().toJson(instance.countryId),
       'is_company': instance.isCompany,
-      'parent_id': instance.parentId,
-      'company_id': instance.companyId,
+      'parent_id': const OdooIntConverter().toJson(instance.parentId),
+      'company_id': const OdooIntConverter().toJson(instance.companyId),
       'active': instance.active,
       'supplier_rank': instance.supplierRank,
       'customer_rank': instance.customerRank,
-      'lang': instance.lang,
-      'tz': instance.tz,
+      'lang': const OdooStringConverter().toJson(instance.lang),
+      'tz': const OdooStringConverter().toJson(instance.tz),
       'category_id': instance.categoryId,
-      'property_account_position_id': instance.propertyAccountPositionId,
-      'property_payment_term_id': instance.propertyPaymentTermId,
-      'image_128': instance.image128,
+      'property_account_position_id': const OdooIntConverter().toJson(
+        instance.propertyAccountPositionId,
+      ),
+      'property_payment_term_id': const OdooIntConverter().toJson(
+        instance.propertyPaymentTermId,
+      ),
+      'image_128': const OdooStringConverter().toJson(instance.image128),
       'has_image': instance.hasImage,
     };

@@ -2,15 +2,49 @@ import 'package:json_annotation/json_annotation.dart';
 
 part 'product_product.g.dart';
 
+/// Helper function to extract ID from Odoo array format [id, name]
+int _extractIdFromArray(dynamic value) {
+  if (value is List && value.isNotEmpty) {
+    return value[0] as int;
+  } else if (value is int) {
+    return value;
+  } else if (value == false || value == null) {
+    return 0; // Handle false values as 0
+  }
+  throw FormatException('Invalid ID format: $value');
+}
+
+/// Helper function to extract nullable ID from Odoo array format
+int? _extractNullableIdFromArray(dynamic value) {
+  if (value == false || value == null) {
+    return null;
+  }
+  if (value is List && value.isNotEmpty) {
+    return value[0] as int;
+  } else if (value is int) {
+    return value;
+  }
+  return null;
+}
+
+/// Helper function to handle nullable strings that might be false
+String? _extractNullableString(dynamic value) {
+  if (value == false || value == null) {
+    return null;
+  }
+  return value.toString();
+}
+
 /// product.product - Product Variant
 /// Specific variant of a product template with stock and pricing information
 @JsonSerializable()
 class ProductProduct {
   final int id;
-  @JsonKey(name: 'product_tmpl_id')
+  @JsonKey(name: 'product_tmpl_id', fromJson: _extractIdFromArray)
   final int productTmplId;
-  @JsonKey(name: 'default_code')
+  @JsonKey(name: 'default_code', fromJson: _extractNullableString)
   final String? defaultCode;
+  @JsonKey(name: 'barcode', fromJson: _extractNullableString)
   final String? barcode;
   final bool active;
   
@@ -38,6 +72,10 @@ class ProductProduct {
   @JsonKey(name: 'display_name')
   final String displayName;
   
+  // Product image
+  @JsonKey(name: 'image_128', fromJson: _extractNullableString)
+  final String? image128;
+  
   // Relationships (stored as IDs)
   @JsonKey(name: 'product_template_variant_value_ids')
   final List<int> productTemplateVariantValueIds;
@@ -47,6 +85,10 @@ class ProductProduct {
   final List<int> packagingIds;
   @JsonKey(name: 'seller_ids')
   final List<int> sellerIds;
+  @JsonKey(name: 'taxes_id')
+  final List<int> taxesId;
+  @JsonKey(name: 'pos_categ_ids')
+  final List<int> posCategIds;
 
   ProductProduct({
     required this.id,
@@ -63,10 +105,13 @@ class ProductProduct {
     this.outgoingQty = 0.0,
     this.freeQty = 0.0,
     required this.displayName,
+    this.image128,
     this.productTemplateVariantValueIds = const [],
     this.comboIds = const [],
     this.packagingIds = const [],
     this.sellerIds = const [],
+    this.taxesId = const [],
+    this.posCategIds = const [],
   });
 
   factory ProductProduct.fromJson(Map<String, dynamic> json) => _$ProductProductFromJson(json);
@@ -91,7 +136,8 @@ class ProductProduct {
     return ProductStockStatus.inStock;
   }
 
-  /// Check if product has variants
+  /// Check if product has variants/attributes
+  /// This checks if the product template has any attribute lines
   bool get hasVariants => productTemplateVariantValueIds.isNotEmpty;
 
   /// Check if product is part of combos
@@ -112,10 +158,13 @@ class ProductProduct {
     double? outgoingQty,
     double? freeQty,
     String? displayName,
+    String? image128,
     List<int>? productTemplateVariantValueIds,
     List<int>? comboIds,
     List<int>? packagingIds,
     List<int>? sellerIds,
+    List<int>? taxesId,
+    List<int>? posCategIds,
   }) {
     return ProductProduct(
       id: id ?? this.id,
@@ -132,10 +181,13 @@ class ProductProduct {
       outgoingQty: outgoingQty ?? this.outgoingQty,
       freeQty: freeQty ?? this.freeQty,
       displayName: displayName ?? this.displayName,
+      image128: image128 ?? this.image128,
       productTemplateVariantValueIds: productTemplateVariantValueIds ?? this.productTemplateVariantValueIds,
       comboIds: comboIds ?? this.comboIds,
       packagingIds: packagingIds ?? this.packagingIds,
       sellerIds: sellerIds ?? this.sellerIds,
+      taxesId: taxesId ?? this.taxesId,
+      posCategIds: posCategIds ?? this.posCategIds,
     );
   }
 }

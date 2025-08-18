@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+// إضافة دعم sqflite_common_ffi للـ desktop platforms
+import 'package:sqflite_common_ffi/sqflite_ffi.dart' as ffi;
 
 /// Local Storage Manager
 /// Handles offline data storage using SQLite and SharedPreferences
@@ -21,9 +23,35 @@ class LocalStorage {
   Future<void> initialize() async {
     if (_isInitialized) return;
 
-    _prefs = await SharedPreferences.getInstance();
-    await _initializeDatabase();
-    _isInitialized = true;
+    try {
+      // تهيئة sqflite للـ desktop platforms
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        // Initialize ffi for desktop platforms
+        ffi.sqfliteFfiInit();
+        databaseFactory = ffi.databaseFactoryFfi;
+        print('LocalStorage: Initialized sqflite_ffi for desktop platform');
+      }
+
+      _prefs = await SharedPreferences.getInstance();
+      print('LocalStorage: SharedPreferences initialized');
+      
+      await _initializeDatabase();
+      print('LocalStorage: Database initialized successfully');
+      
+      _isInitialized = true;
+      print('LocalStorage: Initialization completed');
+    } catch (e) {
+      print('LocalStorage: Initialization failed: $e');
+      // حاول التهيئة بدون قاعدة البيانات إذا فشلت
+      try {
+        _prefs = await SharedPreferences.getInstance();
+        _isInitialized = true;
+        print('LocalStorage: Fallback to SharedPreferences only');
+      } catch (fallbackError) {
+        print('LocalStorage: Complete initialization failure: $fallbackError');
+        rethrow;
+      }
+    }
   }
 
   /// Initialize SQLite database
@@ -326,15 +354,29 @@ class LocalStorage {
     final batch = _database!.batch();
     
     for (final product in products) {
+      // Extract ID from Odoo's [id, name] format
+      final templateId = product['product_tmpl_id'];
+      int templateIdValue;
+      try {
+        templateIdValue = templateId is List ? templateId[0] as int : templateId as int;
+      } catch (e) {
+        // If casting fails, use the product ID as fallback
+        templateIdValue = product['id'] as int;
+      }
+      
+      // Convert barcode to string representation for SQLite
+      final barcodeValue = product['barcode'];
+      final barcodeString = barcodeValue == false ? null : barcodeValue?.toString();
+      
       batch.insert(
         'products',
         {
-          'id': product['id'],
-          'template_id': product['product_tmpl_id'],
-          'name': product['display_name'] ?? product['name'],
-          'barcode': product['barcode'],
-          'price': product['lst_price'] ?? 0.0,
-          'cost': product['standard_price'] ?? 0.0,
+          'id': product['id'] as int,
+          'template_id': templateIdValue,
+          'name': (product['display_name'] ?? product['name']) as String,
+          'barcode': barcodeString,
+          'price': (product['lst_price'] ?? 0.0) as double,
+          'cost': (product['standard_price'] ?? 0.0) as double,
           'available_in_pos': product['available_in_pos'] == true ? 1 : 0,
           'active': product['active'] == true ? 1 : 0,
           'data': jsonEncode(product),
@@ -419,13 +461,36 @@ class LocalStorage {
     final batch = _database!.batch();
     
     for (final category in categories) {
+      // Extract ID from Odoo's [id, name] format for parent_id
+      final parentId = category['parent_id'];
+      int? parentIdValue;
+      if (parentId != null && parentId != false) {
+        try {
+          parentIdValue = parentId is List ? parentId[0] as int : parentId as int;
+        } catch (e) {
+          // If casting fails, set to null
+          parentIdValue = null;
+        }
+      }
+      
+      // Ensure sequence is an integer
+      final sequence = category['sequence'];
+      int sequenceValue = 0;
+      if (sequence != null) {
+        try {
+          sequenceValue = sequence as int;
+        } catch (e) {
+          sequenceValue = 0;
+        }
+      }
+      
       batch.insert(
         'pos_categories',
         {
-          'id': category['id'],
-          'name': category['name'],
-          'parent_id': category['parent_id'],
-          'sequence': category['sequence'] ?? 0,
+          'id': category['id'] as int,
+          'name': category['name'] as String,
+          'parent_id': parentIdValue,
+          'sequence': sequenceValue,
           'data': jsonEncode(category),
           'updated_at': DateTime.now().toIso8601String(),
         },
@@ -460,10 +525,10 @@ class LocalStorage {
         'customers',
         {
           'id': customer['id'],
-          'name': customer['name'],
-          'email': customer['email'],
-          'phone': customer['phone'],
-          'mobile': customer['mobile'],
+          'name': customer['name'] ?? '',
+          'email': customer['email'] ?? '',
+          'phone': customer['phone'] ?? '',
+          'mobile': customer['mobile'] ?? '',
           'is_company': customer['is_company'] == true ? 1 : 0,
           'active': customer['active'] == true ? 1 : 0,
           'data': jsonEncode(customer),
@@ -504,6 +569,22 @@ class LocalStorage {
   Future<int> saveOrder(Map<String, dynamic> order) async {
     _checkInitialized();
     
+    // Check if order already exists by UUID
+    final existingOrder = await _database!.query(
+      'pos_orders',
+      where: 'uuid = ?',
+      whereArgs: [order['uuid']],
+      limit: 1,
+    );
+    
+    if (existingOrder.isNotEmpty) {
+      // Update existing order
+      final localId = existingOrder.first['id'] as int;
+      await updateOrder(localId, order);
+      return localId;
+    }
+    
+    // Insert new order
     final orderId = await _database!.insert(
       'pos_orders',
       {
@@ -759,6 +840,67 @@ class LocalStorage {
     final path = _database!.path;
     final file = await File(path).stat();
     return file.size;
+  }
+
+  // ===== Hybrid Authentication Support =====
+
+  /// Save user profile for offline use
+  Future<void> saveUserProfile(Map<String, dynamic> profile) async {
+    await _prefs?.setString('user_profile', jsonEncode(profile));
+  }
+
+  /// Get stored user profile
+  Future<Map<String, dynamic>?> getUserProfile() async {
+    final profileJson = _prefs?.getString('user_profile');
+    if (profileJson != null) {
+      return jsonDecode(profileJson);
+    }
+    return null;
+  }
+
+  /// Clear user profile
+  Future<void> clearUserProfile() async {
+    await _prefs?.remove('user_profile');
+  }
+
+  /// Save authentication mode
+  Future<void> saveAuthMode(String mode) async {
+    await _prefs?.setString('auth_mode', mode);
+  }
+
+  /// Get authentication mode
+  String? getAuthMode() {
+    return _prefs?.getString('auth_mode');
+  }
+
+  /// Clear authentication mode
+  Future<void> clearAuthMode() async {
+    await _prefs?.remove('auth_mode');
+  }
+
+  /// Check if offline data exists for user
+  Future<bool> hasOfflineData() async {
+    _checkInitialized();
+    
+    // Check if there are any essential records
+    final configCount = await _database!.rawQuery('SELECT COUNT(*) as count FROM pos_config').then((result) => result.first['count'] as int);
+    final productCount = await _database!.rawQuery('SELECT COUNT(*) as count FROM products').then((result) => result.first['count'] as int);
+    
+    return configCount > 0 && productCount > 0;
+  }
+
+  /// Get last sync timestamp
+  Future<DateTime?> getLastSyncTime() async {
+    final timestamp = _prefs?.getString('last_sync_time');
+    if (timestamp != null) {
+      return DateTime.parse(timestamp);
+    }
+    return null;
+  }
+
+  /// Save last sync timestamp
+  Future<void> saveLastSyncTime(DateTime timestamp) async {
+    await _prefs?.setString('last_sync_time', timestamp.toIso8601String());
   }
 
   /// Close database connection

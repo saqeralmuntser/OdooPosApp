@@ -1,4 +1,5 @@
 import 'package:json_annotation/json_annotation.dart';
+import 'odoo_converters.dart';
 
 part 'pos_category.g.dart';
 
@@ -9,10 +10,13 @@ class POSCategory {
   final int id;
   final String name;
   @JsonKey(name: 'parent_id')
+  @OdooIntConverter()
   final int? parentId;
   final int sequence;
+  @OdooIntConverter()
   final int? color;
   @JsonKey(name: 'image_128')
+  @OdooStringConverter()
   final String? image128;
   @JsonKey(name: 'has_image')
   final bool hasImage;

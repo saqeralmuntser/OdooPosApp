@@ -2,6 +2,40 @@ import 'package:json_annotation/json_annotation.dart';
 
 part 'account_tax.g.dart';
 
+/// Custom converter for Odoo many2one fields that return [id, display_name]
+class OdooMany2OneConverter implements JsonConverter<int, dynamic> {
+  const OdooMany2OneConverter();
+
+  @override
+  int fromJson(dynamic json) {
+    if (json is List && json.isNotEmpty) {
+      return json[0] as int;
+    } else if (json is int) {
+      return json;
+    }
+    return 0; // Default value if parsing fails
+  }
+
+  @override
+  dynamic toJson(int object) => object;
+}
+
+/// Custom converter for Odoo many2many fields that return list of IDs
+class OdooMany2ManyConverter implements JsonConverter<List<int>, dynamic> {
+  const OdooMany2ManyConverter();
+
+  @override
+  List<int> fromJson(dynamic json) {
+    if (json is List) {
+      return json.cast<int>();
+    }
+    return [];
+  }
+
+  @override
+  dynamic toJson(List<int> object) => object;
+}
+
 /// account.tax - Tax Configuration
 /// Tax configuration for products and orders
 @JsonSerializable()
@@ -21,16 +55,21 @@ class AccountTax {
   final bool isBaseAffected;
   final int sequence;
   @JsonKey(name: 'company_id')
+  @OdooMany2OneConverter()
   final int companyId;
   
   // Relationships (stored as IDs)
   @JsonKey(name: 'tax_group_id')
+  @OdooMany2OneConverter()
   final int? taxGroupId;
   @JsonKey(name: 'children_tax_ids')
+  @OdooMany2ManyConverter()
   final List<int> childrenTaxIds;
   @JsonKey(name: 'invoice_repartition_line_ids')
+  @OdooMany2ManyConverter()
   final List<int> invoiceRepartitionLineIds;
   @JsonKey(name: 'refund_repartition_line_ids')
+  @OdooMany2ManyConverter()
   final List<int> refundRepartitionLineIds;
 
   AccountTax({

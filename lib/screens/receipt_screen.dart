@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import '../providers/pos_provider.dart';
+import '../backend/providers/enhanced_pos_provider.dart';
 import '../theme/app_theme.dart';
 
 class ReceiptScreen extends StatefulWidget {
@@ -50,11 +50,10 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
   }
 
   void _newOrder() {
-    final posProvider = Provider.of<POSProvider>(context, listen: false);
-    posProvider.clearOrder();
+    // Navigate back to main POS screen for new order
     Navigator.of(context).pushNamedAndRemoveUntil(
-      '/pos',
-      (route) => route.settings.name == '/dashboard',
+      '/main-pos',
+      (route) => false,
     );
   }
 
@@ -65,7 +64,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
         title: const Text('Receipt'),
         automaticallyImplyLeading: false,
       ),
-      body: Consumer<POSProvider>(
+      body: Consumer<EnhancedPOSProvider>(
         builder: (context, posProvider, _) {
           final currencyFormat = NumberFormat.currency(symbol: 'SR ');
           final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
@@ -150,7 +149,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                         Text(
-                          'Table: ${posProvider.tableNumber}',
+                          'Table: ${posProvider.currentSession?.name ?? "1"}',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                         if (posProvider.selectedCustomer != null)
@@ -201,7 +200,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                               ),
 
                               // Items list
-                              ...posProvider.orderItems.map(
+                              ...posProvider.orderLines.map(
                                 (item) => Container(
                                   padding: const EdgeInsets.symmetric(vertical: 8),
                                   child: Column(
@@ -214,48 +213,36 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                                               crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
                                                 Text(
-                                                  item.product.name,
+                                                  item.fullProductName ?? 'Unknown Product',
                                                   style: const TextStyle(
                                                     fontWeight: FontWeight.w500,
                                                   ),
                                                 ),
-                                                // Display selected attributes in receipt
-                                                if (item.product.attributes.isNotEmpty) ...[
-                                                  const SizedBox(height: 2),
-                                                  ...item.product.attributes.map((attributeGroup) {
-                                                    final selectedAttrs = attributeGroup.options
-                                                        .where((attr) => attr.isSelected)
-                                                        .map((attr) => attr.name)
-                                                        .join(', ');
-                                                    
-                                                    if (selectedAttrs.isNotEmpty) {
-                                                      return Padding(
-                                                        padding: const EdgeInsets.only(top: 1),
-                                                        child: Text(
-                                                          '  • $selectedAttrs',
-                                                          style: const TextStyle(
-                                                            fontSize: 10,
-                                                            color: AppTheme.secondaryColor,
-                                                            fontStyle: FontStyle.italic,
-                                                          ),
-                                                        ),
-                                                      );
-                                                    }
-                                                    return const SizedBox.shrink();
-                                                  }).toList(),
-                                                ],
+                                                // Show attributes if available
+                                                if (item.customAttributeValueNames.isNotEmpty)
+                                                  Padding(
+                                                    padding: const EdgeInsets.only(top: 2),
+                                                    child: Text(
+                                                      '(${item.customAttributeValueNames.join(', ')})',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: Colors.grey[600],
+                                                        fontStyle: FontStyle.italic,
+                                                      ),
+                                                    ),
+                                                  ),
                                               ],
                                             ),
                                           ),
                                           Expanded(
                                             child: Text(
-                                              item.quantity.toString(),
+                                              item.qty.toString(),
                                               textAlign: TextAlign.center,
                                             ),
                                           ),
                                           Expanded(
                                             child: Text(
-                                              currencyFormat.format(item.total),
+                                              currencyFormat.format(item.priceSubtotalIncl),
                                               textAlign: TextAlign.right,
                                               style: const TextStyle(
                                                 fontWeight: FontWeight.w500,
@@ -323,7 +310,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                               const SizedBox(height: 16),
 
                               // Payment info
-                              if (posProvider.payments.isNotEmpty) ...[
+                              if (posProvider.paymentsMap.isNotEmpty) ...[
                                 Container(
                                   padding: const EdgeInsets.symmetric(vertical: 8),
                                   decoration: const BoxDecoration(
@@ -339,7 +326,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                                         style: TextStyle(fontWeight: FontWeight.bold),
                                       ),
                                       const SizedBox(height: 8),
-                                      ...posProvider.payments.entries.map(
+                                      ...posProvider.paymentsMap.entries.map(
                                         (entry) => Row(
                                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                           children: [

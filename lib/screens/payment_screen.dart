@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import '../providers/pos_provider.dart';
+import '../backend/providers/enhanced_pos_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/numpad_widget.dart';
 
@@ -29,7 +29,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final posProvider = Provider.of<POSProvider>(context, listen: false);
+      final posProvider = Provider.of<EnhancedPOSProvider>(context, listen: false);
       _currentAmount = posProvider.remainingAmount;
       _amountController.text = _currentAmount.toStringAsFixed(2);
     });
@@ -78,32 +78,106 @@ class _PaymentScreenState extends State<PaymentScreen> {
     });
   }
 
-  void _addPayment() {
+  void _addPayment() async {
     if (_currentAmount <= 0) return;
 
-    final posProvider = Provider.of<POSProvider>(context, listen: false);
-    posProvider.addPayment(_selectedPaymentMethod, _currentAmount);
-
-    setState(() {
-      _currentAmount = posProvider.remainingAmount;
-      _amountController.text = _currentAmount.toStringAsFixed(2);
-    });
+    final posProvider = Provider.of<EnhancedPOSProvider>(context, listen: false);
+    final success = await posProvider.addPayment(_selectedPaymentMethod, _currentAmount);
+    
+    if (success) {
+      setState(() {
+        _currentAmount = posProvider.remainingAmount;
+        _amountController.text = _currentAmount.toStringAsFixed(2);
+      });
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to add payment'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
-  void _validatePayment() {
-    final posProvider = Provider.of<POSProvider>(context, listen: false);
+  void _validatePayment() async {
+    final posProvider = Provider.of<EnhancedPOSProvider>(context, listen: false);
     
     if (posProvider.remainingAmount > 0.01) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please complete the payment before validating'),
+          content: Text('الرجاء إكمال الدفع قبل التأكيد'),
           backgroundColor: Colors.red,
         ),
       );
       return;
     }
 
-    Navigator.of(context).pushNamed('/receipt');
+    // Show loading indicator
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    try {
+      // Get selected customer ID if any
+      int? customerId = posProvider.selectedCustomer?.id;
+      
+      // Validate and send order to Odoo
+      final result = await posProvider.validateOrder(
+        generateInvoice: _invoiceEnabled,
+        customerId: customerId,
+      );
+
+      // Hide loading indicator
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+
+      if (result.success) {
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result.message ?? 'تم إرسال الطلب بنجاح'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          
+          // Navigate to receipt screen
+          Navigator.of(context).pushNamed('/receipt');
+        }
+      } else {
+        // Show error message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result.error ?? 'فشل في إرسال الطلب'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Hide loading indicator if still showing
+      if (mounted) {
+        Navigator.of(context).pop();
+        
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('حدث خطأ غير متوقع: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -116,7 +190,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
-      body: Consumer<POSProvider>(
+      body: Consumer<EnhancedPOSProvider>(
         builder: (context, posProvider, _) {
           final currencyFormat = NumberFormat.currency(symbol: 'SR ');
 
@@ -190,13 +264,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
                               const SizedBox(height: 16),
 
                               // Payment methods used
-                              if (posProvider.payments.isNotEmpty) ...[
+                              if (posProvider.paymentsMap.isNotEmpty) ...[
                                 const Text(
                                   'Payment Methods:',
                                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                                 ),
                                 const SizedBox(height: 8),
-                                ...posProvider.payments.entries.map(
+                                ...posProvider.paymentsMap.entries.map(
                                   (entry) => Padding(
                                     padding: const EdgeInsets.only(bottom: 4),
                                     child: Row(
@@ -208,7 +282,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                             Text(currencyFormat.format(entry.value)),
                                             IconButton(
                                               icon: const Icon(Icons.close, size: 16),
-                                              onPressed: () => posProvider.removePayment(entry.key),
+                                              onPressed: () async {
+                                                await posProvider.removePayment(entry.key);
+                                              },
                                               constraints: const BoxConstraints(
                                                 minWidth: 24,
                                                 minHeight: 24,
