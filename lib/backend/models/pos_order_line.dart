@@ -49,12 +49,6 @@ class POSOrderLine {
   final List<int> taxIdsAfterFiscalPosition;
   @JsonKey(name: 'pack_lot_ids')
   final List<int> packLotIds;
-  @JsonKey(name: 'custom_attribute_value_ids')
-  final List<int> customAttributeValueIds;
-  @JsonKey(name: 'custom_attribute_value_names')
-  final List<String> customAttributeValueNames;
-  @JsonKey(name: 'custom_attribute_extra_prices')
-  final List<double> customAttributeExtraPrices;
 
   POSOrderLine({
     required this.id,
@@ -78,9 +72,6 @@ class POSOrderLine {
     this.taxIds = const [],
     this.taxIdsAfterFiscalPosition = const [],
     this.packLotIds = const [],
-    this.customAttributeValueIds = const [],
-    this.customAttributeValueNames = const [],
-    this.customAttributeExtraPrices = const [],
   });
 
   factory POSOrderLine.fromJson(Map<String, dynamic> json) => _$POSOrderLineFromJson(json);
@@ -104,6 +95,8 @@ class POSOrderLine {
     json.remove('write_date'); // Server will set this
     json.remove('tax_ids_after_fiscal_position'); // Usually calculated by server
     
+    // Custom attribute fields have been removed from the model since they don't exist in Odoo 18
+    
     // Remove null values to avoid issues
     json.removeWhere((key, value) => value == null);
     
@@ -125,8 +118,8 @@ class POSOrderLine {
   /// Check if line is refunded
   bool get isRefunded => refundedOrderlineId != null || refundedQty > 0;
 
-  /// Check if line has custom attributes
-  bool get hasCustomAttributes => customAttributeValueIds.isNotEmpty;
+  /// Check if line has custom attributes (not supported in Odoo 18)
+  bool get hasCustomAttributes => false;
 
   /// Check if line has lot/serial numbers
   bool get hasLotNumbers => packLotIds.isNotEmpty;
@@ -162,9 +155,6 @@ class POSOrderLine {
     List<int>? taxIds,
     List<int>? taxIdsAfterFiscalPosition,
     List<int>? packLotIds,
-    List<int>? customAttributeValueIds,
-    List<String>? customAttributeValueNames,
-    List<double>? customAttributeExtraPrices,
   }) {
     return POSOrderLine(
       id: id ?? this.id,
@@ -188,9 +178,6 @@ class POSOrderLine {
       taxIds: taxIds ?? this.taxIds,
       taxIdsAfterFiscalPosition: taxIdsAfterFiscalPosition ?? this.taxIdsAfterFiscalPosition,
       packLotIds: packLotIds ?? this.packLotIds,
-      customAttributeValueIds: customAttributeValueIds ?? this.customAttributeValueIds,
-      customAttributeValueNames: customAttributeValueNames ?? this.customAttributeValueNames,
-      customAttributeExtraPrices: customAttributeExtraPrices ?? this.customAttributeExtraPrices,
     );
   }
 }

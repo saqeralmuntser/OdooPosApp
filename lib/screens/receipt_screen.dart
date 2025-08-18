@@ -218,19 +218,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                                                     fontWeight: FontWeight.w500,
                                                   ),
                                                 ),
-                                                // Show attributes if available
-                                                if (item.customAttributeValueNames.isNotEmpty)
-                                                  Padding(
-                                                    padding: const EdgeInsets.only(top: 2),
-                                                    child: Text(
-                                                      '(${item.customAttributeValueNames.join(', ')})',
-                                                      style: TextStyle(
-                                                        fontSize: 12,
-                                                        color: Colors.grey[600],
-                                                        fontStyle: FontStyle.italic,
-                                                      ),
-                                                    ),
-                                                  ),
+                                                // Note: Custom attributes are not supported in Odoo 18
                                               ],
                                             ),
                                           ),

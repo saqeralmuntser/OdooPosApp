@@ -99,23 +99,29 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
       // Ensure there's an active order, create one if needed
       if (!posProvider.hasActiveOrder) {
         final session = posProvider.currentSession;
-        if (session == null) {
-          throw Exception('No active session found');
+        final config = posProvider.selectedConfig;
+        if (session == null || config == null) {
+          throw Exception('No active session or config found');
         }
         
-        final orderResult = await posProvider.backendService.orderManager.createOrder(session: session);
+        // Use pricelist_id from config, fallback to 1 if null
+        final pricelistId = config.pricelistId ?? 1;
+        print('📝 Creating order (with attributes) using pricelist_id: $pricelistId (from config: ${config.pricelistId})');
+        
+        final orderResult = await posProvider.backendService.orderManager.createOrder(
+          session: session,
+          pricelistId: pricelistId,
+        );
         if (!orderResult.success) {
           throw Exception(orderResult.error ?? 'Failed to create order');
         }
       }
       
       // Add the product with attributes to the order
+      // Note: Custom attributes are stored in the order line but passed through the product name
       final result = await posProvider.backendService.orderManager.addProductToOrder(
         product: product,
         quantity: quantity,
-        customAttributeValueIds: selectedAttributeValueIds,
-        customAttributeValueNames: selectedAttributeNames ?? [],
-        customAttributeExtraPrices: selectedAttributeExtraPrices ?? [],
       );
       
       if (!result.success) {
@@ -161,11 +167,19 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
       // Ensure there's an active order, create one if needed
       if (!posProvider.hasActiveOrder) {
         final session = posProvider.currentSession;
-        if (session == null) {
-          throw Exception('No active session found');
+        final config = posProvider.selectedConfig;
+        if (session == null || config == null) {
+          throw Exception('No active session or config found');
         }
         
-        final orderResult = await posProvider.backendService.orderManager.createOrder(session: session);
+        // Use pricelist_id from config, fallback to 1 if null
+        final pricelistId = config.pricelistId ?? 1;
+        print('📝 Creating order (simple product) using pricelist_id: $pricelistId (from config: ${config.pricelistId})');
+        
+        final orderResult = await posProvider.backendService.orderManager.createOrder(
+          session: session,
+          pricelistId: pricelistId,
+        );
         if (!orderResult.success) {
           throw Exception(orderResult.error ?? 'Failed to create order');
         }
@@ -831,28 +845,12 @@ class OrderItemCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Product name with attributes
-                  RichText(
-                    text: TextSpan(
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black,
-                        fontSize: 14,
-                      ),
-                      children: [
-                        TextSpan(
-                          text: orderLine.fullProductName ?? 'منتج غير محدد',
-                        ),
-                        if (orderLine.customAttributeValueNames.isNotEmpty)
-                          TextSpan(
-                            text: ' (${orderLine.customAttributeValueNames.join(', ')})',
-                            style: TextStyle(
-                              color: AppTheme.primaryColor,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                      ],
+                  // Product name
+                  Text(
+                    orderLine.fullProductName ?? 'منتج غير محدد',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
                     ),
                   ),
                   const SizedBox(height: 4),

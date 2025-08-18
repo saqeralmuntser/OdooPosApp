@@ -92,9 +92,19 @@ class POSPayment {
   factory POSPayment.fromJson(Map<String, dynamic> json) => _$POSPaymentFromJson(json);
   Map<String, dynamic> toJson() => _$POSPaymentToJson(this);
   
+  /// Convert DateTime to Odoo format (YYYY-MM-DD HH:MM:SS)
+  static String _formatDateTimeForOdoo(DateTime dateTime) {
+    return dateTime.toUtc().toIso8601String().replaceAll('T', ' ').substring(0, 19);
+  }
+
   /// Convert to JSON for server submission (filters out incompatible fields)
   Map<String, dynamic> toServerJson() {
     final json = toJson();
+    
+    // Convert date fields to proper Odoo format
+    if (json['payment_date'] != null) {
+      json['payment_date'] = _formatDateTimeForOdoo(paymentDate);
+    }
     
     // Remove fields that are not needed for server creation or might cause issues
     json.remove('id'); // Remove local ID

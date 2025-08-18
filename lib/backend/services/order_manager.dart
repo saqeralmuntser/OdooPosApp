@@ -82,6 +82,7 @@ class OrderManager {
   /// Create new order
   Future<OrderResult> createOrder({
     required POSSession session,
+    required int pricelistId,
     int? partnerId,
     String? note,
   }) async {
@@ -112,9 +113,21 @@ class OrderManager {
         amountPaid: 0.0,
         currencyId: session.currencyId,
         sequenceNumber: sequenceNumber,
-        pricelistId: 1, // Default pricelist, should be from config
+        pricelistId: pricelistId,
       );
 
+      print('✅ Created new order with pricelist_id: $pricelistId');
+      print('📅 Order date created: ${order.dateOrder.toIso8601String()}');
+      
+      // Test date format conversion
+      final testDate = order.toServerJson()['date_order'];
+      print('📅 Date format for Odoo: $testDate');
+      
+      // Warn if using fallback pricelist_id
+      if (pricelistId == 1) {
+        print('⚠️  Warning: Using fallback pricelist_id=1. Ensure this pricelist exists in your database.');
+      }
+      
       _currentOrder = order;
       _currentOrderLines.clear();
       _currentPayments.clear();
@@ -136,27 +149,17 @@ class OrderManager {
     double discount = 0.0,
     String? customerNote,
     List<int>? taxIds,
-    List<int>? customAttributeValueIds,
-    List<String>? customAttributeValueNames,
-    List<double>? customAttributeExtraPrices,
   }) async {
     if (_currentOrder == null) {
       return OrderLineResult(success: false, error: 'No active order');
     }
 
     try {
-      // Check if product with same attributes already exists in order
-      final currentAttributes = customAttributeValueIds ?? [];
-      print('Adding product ${product.displayName} with attributes: $currentAttributes');
+      // Check if product already exists in order (simplified since attributes are not supported in Odoo 18)
+      print('Adding product ${product.displayName}');
       
       final existingLineIndex = _currentOrderLines.indexWhere(
-        (line) {
-          final isSameProduct = line.productId == product.id;
-          final isSameAttributes = _attributeListsEqual(line.customAttributeValueIds, currentAttributes);
-          print('Comparing with existing line: productId=${line.productId}, attributes=${line.customAttributeValueIds}');
-          print('Same product: $isSameProduct, Same attributes: $isSameAttributes');
-          return isSameProduct && isSameAttributes;
-        },
+        (line) => line.productId == product.id,
       );
       
       print('Existing line index: $existingLineIndex');
@@ -176,15 +179,12 @@ class OrderManager {
           discount: discount,
           customerNote: customerNote,
           taxIds: taxIds,
-          customAttributeValueIds: customAttributeValueIds,
-          customAttributeValueNames: customAttributeValueNames,
-          customAttributeExtraPrices: customAttributeExtraPrices,
         );
         
         _currentOrderLines[existingLineIndex] = orderLine;
       } else {
-        // Create new line (different product or different attributes)
-        print('Creating new line for product with different attributes');
+        // Create new line for new product
+        print('Creating new line for product');
         orderLine = await _createOrderLine(
           product: product,
           quantity: quantity,
@@ -192,9 +192,6 @@ class OrderManager {
           discount: discount,
           customerNote: customerNote,
           taxIds: taxIds,
-          customAttributeValueIds: customAttributeValueIds,
-          customAttributeValueNames: customAttributeValueNames,
-          customAttributeExtraPrices: customAttributeExtraPrices,
         );
         
         _currentOrderLines.add(orderLine);
@@ -218,21 +215,9 @@ class OrderManager {
     double discount = 0.0,
     String? customerNote,
     List<int>? taxIds,
-    List<int>? customAttributeValueIds,
-    List<String>? customAttributeValueNames,
-    List<double>? customAttributeExtraPrices,
   }) async {
-    // Calculate base price plus attribute extra prices
-    double basePrice = customPrice ?? product.finalPrice;
-    double attributeExtraTotal = 0.0;
-    
-    // Add attribute extra prices
-    if (customAttributeExtraPrices != null && customAttributeExtraPrices.isNotEmpty) {
-      attributeExtraTotal = customAttributeExtraPrices.fold(0.0, (sum, price) => sum + price);
-      print('Attribute extra prices: $customAttributeExtraPrices, total: $attributeExtraTotal');
-    }
-    
-    final priceUnit = basePrice + attributeExtraTotal;
+    // Calculate base price (attribute extras not supported in Odoo 18)
+    final priceUnit = customPrice ?? product.finalPrice;
     final subtotalBeforeDiscount = priceUnit * quantity;
     final discountAmount = subtotalBeforeDiscount * (discount / 100);
     final priceSubtotal = subtotalBeforeDiscount - discountAmount;
@@ -257,9 +242,6 @@ class OrderManager {
       customerNote: customerNote,
       totalCost: product.standardPrice * quantity,
       taxIds: taxes.map((tax) => tax.id).toList(),
-      customAttributeValueIds: customAttributeValueIds ?? [],
-      customAttributeValueNames: customAttributeValueNames ?? [],
-      customAttributeExtraPrices: customAttributeExtraPrices ?? [],
     );
   }
 
@@ -293,9 +275,6 @@ class OrderManager {
           discount: currentLine.discount,
           customerNote: currentLine.customerNote,
           taxIds: currentLine.taxIds,
-          customAttributeValueIds: currentLine.customAttributeValueIds,
-          customAttributeValueNames: currentLine.customAttributeValueNames,
-          customAttributeExtraPrices: currentLine.customAttributeExtraPrices,
         );
 
         _currentOrderLines[lineIndex] = updatedLine;
@@ -341,9 +320,6 @@ class OrderManager {
         discount: discount,
         customerNote: currentLine.customerNote,
         taxIds: currentLine.taxIds,
-        customAttributeValueIds: currentLine.customAttributeValueIds,
-        customAttributeValueNames: currentLine.customAttributeValueNames,
-        customAttributeExtraPrices: currentLine.customAttributeExtraPrices,
       );
 
       _currentOrderLines[lineIndex] = updatedLine;
@@ -392,6 +368,10 @@ class OrderManager {
       );
 
       _currentPayments.add(payment);
+      
+      // Test payment date format conversion
+      final testPaymentDate = payment.toServerJson()['payment_date'];
+      print('💳 Payment date for Odoo: $testPaymentDate');
 
       await _recalculateOrder();
       await _saveDraftOrder();
@@ -583,6 +563,7 @@ class OrderManager {
       
       print('=== Creating POS Order ===');
       print('Order data keys: ${orderData.keys.toList()}');
+      print('Date format check: ${orderData['date_order']}');
       print('Order data: $orderData');
       
       final serverId = await _apiClient.create('pos.order', orderData);
@@ -596,6 +577,19 @@ class OrderManager {
         lineData['order_id'] = serverId;
         
         print('Line ${i + 1} data keys: ${lineData.keys.toList()}');
+        
+        // Check for problematic fields
+        final problematicFields = [
+          'custom_attribute_value_ids',
+          'custom_attribute_value_names', 
+          'custom_attribute_extra_prices'
+        ];
+        for (final field in problematicFields) {
+          if (lineData.containsKey(field)) {
+            print('⚠️  WARNING: Line ${i + 1} still contains $field: ${lineData[field]}');
+          }
+        }
+        
         print('Line ${i + 1} data: $lineData');
         
         await _apiClient.create('pos.order.line', lineData);
@@ -610,6 +604,7 @@ class OrderManager {
         paymentData['pos_order_id'] = serverId;
         
         print('Payment ${i + 1} data keys: ${paymentData.keys.toList()}');
+        print('Payment ${i + 1} date format check: ${paymentData['payment_date']}');
         print('Payment ${i + 1} data: $paymentData');
         
         await _apiClient.create('pos.payment', paymentData);
@@ -760,29 +755,6 @@ class OrderManager {
     } catch (e) {
       return 1;
     }
-  }
-
-  /// Compare two attribute lists for equality
-  bool _attributeListsEqual(List<int> list1, List<int> list2) {
-    // Handle null/empty cases
-    final l1 = list1;
-    final l2 = list2;
-    
-    // Both empty or null - considered equal
-    if (l1.isEmpty && l2.isEmpty) return true;
-    
-    // Different lengths - not equal
-    if (l1.length != l2.length) return false;
-    
-    // Sort both lists and compare element by element
-    final sorted1 = List<int>.from(l1)..sort();
-    final sorted2 = List<int>.from(l2)..sort();
-    
-    for (int i = 0; i < sorted1.length; i++) {
-      if (sorted1[i] != sorted2[i]) return false;
-    }
-    
-    return true;
   }
 
   /// Notify all listeners

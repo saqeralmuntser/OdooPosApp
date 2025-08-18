@@ -123,9 +123,19 @@ class POSOrder {
   factory POSOrder.fromJson(Map<String, dynamic> json) => _$POSOrderFromJson(json);
   Map<String, dynamic> toJson() => _$POSOrderToJson(this);
   
+  /// Convert DateTime to Odoo format (YYYY-MM-DD HH:MM:SS)
+  static String _formatDateTimeForOdoo(DateTime dateTime) {
+    return dateTime.toUtc().toIso8601String().replaceAll('T', ' ').substring(0, 19);
+  }
+
   /// Convert to JSON for server submission (filters out incompatible fields)
   Map<String, dynamic> toServerJson() {
     final json = toJson();
+    
+    // Convert date fields to proper Odoo format
+    if (json['date_order'] != null) {
+      json['date_order'] = _formatDateTimeForOdoo(dateOrder);
+    }
     
     // Remove fields that don't exist in Odoo 18 database schema
     json.remove('id'); // Remove local ID

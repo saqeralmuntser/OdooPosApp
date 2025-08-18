@@ -40,47 +40,28 @@ POSOrderLine _$POSOrderLineFromJson(Map<String, dynamic> json) => POSOrderLine(
           ?.map((e) => (e as num).toInt())
           .toList() ??
       const [],
-  customAttributeValueIds:
-      (json['custom_attribute_value_ids'] as List<dynamic>?)
-          ?.map((e) => (e as num).toInt())
-          .toList() ??
-      const [],
-  customAttributeValueNames:
-      (json['custom_attribute_value_names'] as List<dynamic>?)
-          ?.map((e) => e as String)
-          .toList() ??
-      const [],
-  customAttributeExtraPrices:
-      (json['custom_attribute_extra_prices'] as List<dynamic>?)
-          ?.map((e) => (e as num).toDouble())
-          .toList() ??
-      const [],
 );
 
-Map<String, dynamic> _$POSOrderLineToJson(POSOrderLine instance) =>
-    <String, dynamic>{
-      'id': instance.id,
-      'order_id': instance.orderId,
-      'product_id': instance.productId,
-      'uuid': instance.uuid,
-      'full_product_name': instance.fullProductName,
-      'company_id': instance.companyId,
-      'qty': instance.qty,
-      'price_unit': instance.priceUnit,
-      'price_subtotal': instance.priceSubtotal,
-      'price_subtotal_incl': instance.priceSubtotalIncl,
-      'discount': instance.discount,
-      'margin': instance.margin,
-      'margin_percent': instance.marginPercent,
-      'customer_note': instance.customerNote,
-      'refunded_orderline_id': instance.refundedOrderlineId,
-      'refunded_qty': instance.refundedQty,
-      'total_cost': instance.totalCost,
-      'is_total_cost_computed': instance.isTotalCostComputed,
-      'tax_ids': instance.taxIds,
-      'tax_ids_after_fiscal_position': instance.taxIdsAfterFiscalPosition,
-      'pack_lot_ids': instance.packLotIds,
-      'custom_attribute_value_ids': instance.customAttributeValueIds,
-      'custom_attribute_value_names': instance.customAttributeValueNames,
-      'custom_attribute_extra_prices': instance.customAttributeExtraPrices,
-    };
+Map<String, dynamic> _$POSOrderLineToJson(POSOrderLine instance) => <String, dynamic>{
+  'id': instance.id,
+  'order_id': instance.orderId,
+  'product_id': instance.productId,
+  'uuid': instance.uuid,
+  'full_product_name': instance.fullProductName,
+  'company_id': instance.companyId,
+  'qty': instance.qty,
+  'price_unit': instance.priceUnit,
+  'price_subtotal': instance.priceSubtotal,
+  'price_subtotal_incl': instance.priceSubtotalIncl,
+  'discount': instance.discount,
+  'margin': instance.margin,
+  'margin_percent': instance.marginPercent,
+  'customer_note': instance.customerNote,
+  'refunded_orderline_id': instance.refundedOrderlineId,
+  'refunded_qty': instance.refundedQty,
+  'total_cost': instance.totalCost,
+  'is_total_cost_computed': instance.isTotalCostComputed,
+  'tax_ids': instance.taxIds,
+  'tax_ids_after_fiscal_position': instance.taxIdsAfterFiscalPosition,
+  'pack_lot_ids': instance.packLotIds,
+};
