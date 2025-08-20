@@ -6,6 +6,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 // إضافة دعم sqflite_common_ffi للـ desktop platforms
 import 'package:sqflite_common_ffi/sqflite_ffi.dart' as ffi;
+import '../models/network_printer.dart';
 
 /// Local Storage Manager
 /// Handles offline data storage using SQLite and SharedPreferences
@@ -525,10 +526,10 @@ class LocalStorage {
         'customers',
         {
           'id': customer['id'],
-          'name': customer['name'] ?? '',
-          'email': customer['email'] ?? '',
-          'phone': customer['phone'] ?? '',
-          'mobile': customer['mobile'] ?? '',
+          'name': customer['name'] == false ? '' : (customer['name'] ?? ''),
+          'email': customer['email'] == false ? '' : (customer['email'] ?? ''),
+          'phone': customer['phone'] == false ? '' : (customer['phone'] ?? ''),
+          'mobile': customer['mobile'] == false ? '' : (customer['mobile'] ?? ''),
           'is_company': customer['is_company'] == true ? 1 : 0,
           'active': customer['active'] == true ? 1 : 0,
           'data': jsonEncode(customer),
@@ -901,6 +902,185 @@ class LocalStorage {
   /// Save last sync timestamp
   Future<void> saveLastSyncTime(DateTime timestamp) async {
     await _prefs?.setString('last_sync_time', timestamp.toIso8601String());
+  }
+
+  /// Save company data
+  Future<void> saveCompany(Map<String, dynamic> companyData) async {
+    try {
+      final companyJson = jsonEncode(companyData);
+      await _prefs?.setString('company_data', companyJson);
+      print('✅ Company data saved to cache');
+    } catch (e) {
+      print('❌ Error saving company data: $e');
+    }
+  }
+
+  /// Get company data
+  Future<Map<String, dynamic>?> getCompany() async {
+    try {
+      final companyJson = _prefs?.getString('company_data');
+      if (companyJson != null) {
+        return jsonDecode(companyJson) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      print('❌ Error loading company data: $e');
+    }
+    return null;
+  }
+
+  /// Clear company data
+  Future<void> clearCompany() async {
+    await _prefs?.remove('company_data');
+  }
+
+  // ============== Network Printers Storage ==============
+
+  /// Save configured printer
+  Future<void> saveConfiguredPrinter(NetworkPrinter printer) async {
+    try {
+      final printers = await getConfiguredPrinters();
+      final existingIndex = printers.indexWhere((p) => p.id == printer.id);
+      
+      if (existingIndex >= 0) {
+        printers[existingIndex] = printer;
+      } else {
+        printers.add(printer);
+      }
+      
+      final printersJson = jsonEncode(printers.map((p) => p.toJson()).toList());
+      await _prefs?.setString('configured_printers', printersJson);
+      print('✅ Configured printer saved: ${printer.name}');
+    } catch (e) {
+      print('❌ Error saving configured printer: $e');
+    }
+  }
+
+  /// Get all configured printers
+  Future<List<NetworkPrinter>> getConfiguredPrinters() async {
+    try {
+      final printersJson = _prefs?.getString('configured_printers');
+      if (printersJson != null) {
+        final List<dynamic> printersList = jsonDecode(printersJson);
+        return printersList
+            .map((json) => NetworkPrinter.fromJson(json as Map<String, dynamic>))
+            .toList();
+      }
+    } catch (e) {
+      print('❌ Error loading configured printers: $e');
+    }
+    return [];
+  }
+
+  /// Remove configured printer
+  Future<void> removeConfiguredPrinter(String printerId) async {
+    try {
+      final printers = await getConfiguredPrinters();
+      printers.removeWhere((p) => p.id == printerId);
+      
+      final printersJson = jsonEncode(printers.map((p) => p.toJson()).toList());
+      await _prefs?.setString('configured_printers', printersJson);
+      print('✅ Configured printer removed: $printerId');
+    } catch (e) {
+      print('❌ Error removing configured printer: $e');
+    }
+  }
+
+  /// Get configured printers for specific POS config
+  Future<List<NetworkPrinter>> getPrintersForConfig(int posConfigId) async {
+    final allPrinters = await getConfiguredPrinters();
+    return allPrinters.where((printer) => printer.posConfigId == posConfigId).toList();
+  }
+
+  /// Save print job to queue
+  Future<void> savePrintJob(PrintJob job) async {
+    try {
+      final jobs = await getPendingPrintJobs();
+      jobs.add(job);
+      
+      final jobsJson = jsonEncode(jobs.map((j) => j.toJson()).toList());
+      await _prefs?.setString('print_jobs_queue', jobsJson);
+      print('✅ Print job saved to queue: ${job.jobName}');
+    } catch (e) {
+      print('❌ Error saving print job: $e');
+    }
+  }
+
+  /// Get pending print jobs
+  Future<List<PrintJob>> getPendingPrintJobs() async {
+    try {
+      final jobsJson = _prefs?.getString('print_jobs_queue');
+      if (jobsJson != null) {
+        final List<dynamic> jobsList = jsonDecode(jobsJson);
+        return jobsList
+            .map((json) => PrintJob.fromJson(json as Map<String, dynamic>))
+            .where((job) => job.status == PrintJobStatus.pending || job.status == PrintJobStatus.processing)
+            .toList();
+      }
+    } catch (e) {
+      print('❌ Error loading print jobs: $e');
+    }
+    return [];
+  }
+
+  /// Update print job status
+  Future<void> updatePrintJobStatus(String jobId, PrintJobStatus status, {String? error}) async {
+    try {
+      final jobsJson = _prefs?.getString('print_jobs_queue');
+      if (jobsJson != null) {
+        final List<dynamic> jobsList = jsonDecode(jobsJson);
+        final jobs = jobsList
+            .map((json) => PrintJob.fromJson(json as Map<String, dynamic>))
+            .toList();
+        
+        final jobIndex = jobs.indexWhere((j) => j.id == jobId);
+        if (jobIndex >= 0) {
+          jobs[jobIndex] = jobs[jobIndex].copyWith(
+            status: status,
+            processedAt: DateTime.now(),
+            error: error,
+          );
+          
+          final updatedJobsJson = jsonEncode(jobs.map((j) => j.toJson()).toList());
+          await _prefs?.setString('print_jobs_queue', updatedJobsJson);
+          print('✅ Print job status updated: $jobId -> $status');
+        }
+      }
+    } catch (e) {
+      print('❌ Error updating print job status: $e');
+    }
+  }
+
+  /// Clear completed print jobs (older than 24 hours)
+  Future<void> clearOldPrintJobs() async {
+    try {
+      final jobsJson = _prefs?.getString('print_jobs_queue');
+      if (jobsJson != null) {
+        final List<dynamic> jobsList = jsonDecode(jobsJson);
+        final jobs = jobsList
+            .map((json) => PrintJob.fromJson(json as Map<String, dynamic>))
+            .toList();
+        
+        final cutoffTime = DateTime.now().subtract(const Duration(days: 1));
+        final activJobs = jobs.where((job) => 
+          job.status == PrintJobStatus.pending || 
+          job.status == PrintJobStatus.processing ||
+          (job.processedAt != null && job.processedAt!.isAfter(cutoffTime))
+        ).toList();
+        
+        final cleanJobsJson = jsonEncode(activJobs.map((j) => j.toJson()).toList());
+        await _prefs?.setString('print_jobs_queue', cleanJobsJson);
+        print('✅ Old print jobs cleared');
+      }
+    } catch (e) {
+      print('❌ Error clearing old print jobs: $e');
+    }
+  }
+
+  /// Clear all printer data
+  Future<void> clearPrinterData() async {
+    await _prefs?.remove('configured_printers');
+    await _prefs?.remove('print_jobs_queue');
+    print('✅ All printer data cleared');
   }
 
   /// Close database connection

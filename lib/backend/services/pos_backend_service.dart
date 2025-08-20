@@ -9,6 +9,7 @@ import '../models/account_tax.dart';
 import '../models/product_attribute.dart';
 import '../models/product_pricelist.dart';
 import '../models/product_pricelist_item.dart';
+import '../models/res_company.dart';
 import '../api/odoo_api_client.dart';
 import '../storage/local_storage.dart';
 import 'session_manager.dart';
@@ -44,6 +45,7 @@ class POSBackendService {
   Map<int, Map<String, dynamic>> _productTemplates = {};
   Map<int, List<Map<String, dynamic>>> _attributeLines = {};
   List<AccountTax> _taxes = [];
+  ResCompany? _company;
 
   // Stream controllers for real-time updates
   final StreamController<List<ProductProduct>> _productsController = StreamController<List<ProductProduct>>.broadcast();
@@ -76,6 +78,7 @@ class POSBackendService {
   List<ProductPricelist> get pricelists => List.unmodifiable(_pricelists);
   List<ProductPricelistItem> get pricelistItems => List.unmodifiable(_pricelistItems);
   List<AccountTax> get taxes => List.unmodifiable(_taxes);
+  ResCompany? get company => _company;
 
   /// Check if service is initialized
   bool get isInitialized => _isInitialized;
@@ -428,7 +431,11 @@ class POSBackendService {
         fields: [
           'id', 'name', 'active', 'company_id', 'currency_id', 'cash_control',
           'sequence_line_id', 'sequence_id', 'session_ids', 'pricelist_id',
-          'available_pricelist_ids', 'use_pricelist'
+          'available_pricelist_ids', 'use_pricelist', 'payment_method_ids',
+          // إضافة حقول الطابعات الموجودة فعلياً في Odoo 18
+          'epson_printer_ip', 'printer_ids', 'proxy_ip', 'is_order_printer',
+          'iface_print_auto', 'iface_print_skip_screen', 'iface_print_via_proxy',
+          'iface_cashdrawer', 'receipt_header', 'receipt_footer', 'other_devices'
         ],
       );
 
@@ -438,6 +445,7 @@ class POSBackendService {
         print('  - Found config: ${config.name} (ID: ${config.id}, Active: ${config.active})');
         print('    Use Pricelist: ${config.usePricelist}, Default Pricelist: ${config.pricelistId}');
         print('    Available Pricelists: ${config.availablePricelistIds}');
+        print('    Payment Methods: ${config.paymentMethodIds}');
       }
     } catch (e) {
       print('Error loading configurations: $e');
@@ -522,6 +530,9 @@ class POSBackendService {
   /// Load data from Odoo server
   Future<void> _loadDataFromServer(POSSession session) async {
     try {
+      // Load company information first
+      await _loadCompany(session.configId);
+      
       // Load products
       await _loadProducts();
       
@@ -553,12 +564,194 @@ class POSBackendService {
         _pricelistItems = [];
       }
 
+      // إعادة جلب إعدادات POS Config الكاملة مع حقول الطابعات
+      await _reloadConfigWithPrinterSettings(session.configId);
+
       // Start background sync
       _syncService.startPeriodicSync();
     } catch (e) {
       print('Error loading data from server: $e');
       throw e;
     }
+  }
+  
+  /// إعادة جلب إعدادات POS Config مع حقول الطابعات
+  Future<void> _reloadConfigWithPrinterSettings(int configId) async {
+    try {
+      print('🔄 Reloading POS Config with printer settings for ID: $configId');
+      
+      final configData = await _apiClient.read('pos.config', configId, fields: [
+        'id', 'name', 'active', 'company_id', 'currency_id', 'cash_control',
+        'sequence_line_id', 'sequence_id', 'session_ids', 'pricelist_id',
+        'available_pricelist_ids', 'use_pricelist', 'payment_method_ids',
+        // حقول الطابعات الموجودة فعلياً في Odoo 18
+        'epson_printer_ip', 'printer_ids', 'proxy_ip', 'is_order_printer',
+        'iface_print_auto', 'iface_print_skip_screen', 'iface_print_via_proxy',
+        'iface_cashdrawer', 'receipt_header', 'receipt_footer', 'other_devices'
+      ]);
+      
+      if (configData.isNotEmpty) {
+        final updatedConfig = POSConfig.fromJson(configData);
+        
+        // استبدال الـ config في القائمة
+        final configIndex = _availableConfigs.indexWhere((c) => c.id == configId);
+        if (configIndex >= 0) {
+          _availableConfigs[configIndex] = updatedConfig;
+          print('✅ POS Config updated with printer settings');
+          print('  💰 Cashier Printer IP: ${updatedConfig.epsonPrinterIp ?? 'NOT SET'}');
+          print('  🍳 Kitchen Printer IDs: ${updatedConfig.printerIds ?? 'NONE'}');
+        }
+      }
+    } catch (e) {
+      print('❌ Error reloading POS Config with printer settings: $e');
+    }
+  }
+
+  /// Load company information from server
+  Future<void> _loadCompany(int configId) async {
+    try {
+      print('🏢 Loading company information for config $configId...');
+      
+      // First get the company ID from the POS config
+      final config = _availableConfigs.firstWhere(
+        (config) => config.id == configId,
+        orElse: () => throw Exception('POS config not found')
+      );
+      
+      print('Found config: ${config.name}, Company ID: ${config.companyId}');
+      
+      // Load company data with more fields including logo
+      final companyData = await _apiClient.searchRead(
+        'res.company',
+        domain: [['id', '=', config.companyId]],
+        fields: [
+          'id', 'name', 'display_name', 'email', 'phone', 'website', 'vat',
+          'street', 'street2', 'city', 'zip', 'country_id', 'state_id',
+          'currency_id', 'company_registry', 'active', 'logo', 'partner_id'
+        ],
+      );
+
+      print('Company search result: ${companyData.length} records found');
+      if (companyData.isNotEmpty) {
+        print('Raw company data: ${companyData.first}');
+        
+        // Clean company data for proper parsing
+        final cleanedData = _cleanCompanyData(companyData.first);
+        print('Cleaned company data: $cleanedData');
+        
+        _company = ResCompany.fromJson(cleanedData);
+        print('✅ Successfully loaded company: ${_company!.name}');
+        print('  - Email: ${_company!.email ?? "Not set"}');
+        print('  - Phone: ${_company!.phone ?? "Not set"}');
+        print('  - VAT: ${_company!.vatNumber ?? "Not set"}');
+        print('  - Website: ${_company!.website ?? "Not set"}');
+        print('  - Address: ${_company!.fullAddress}');
+        print('  - Registry: ${_company!.companyRegistry ?? "Not set"}');
+        
+        // Save cleaned data to cache for offline use
+        await _localStorage.saveCompany(cleanedData);
+      } else {
+        print('⚠️ Warning: No company data found for config, trying fallback methods...');
+        await _tryAlternativeCompanyLoad();
+      }
+    } catch (e) {
+      print('❌ Error loading company: $e');
+      print('Stack trace: ${StackTrace.current}');
+      await _tryAlternativeCompanyLoad();
+    }
+  }
+
+  /// Try alternative methods to load company data
+  Future<void> _tryAlternativeCompanyLoad() async {
+    try {
+      print('Trying to load company from user context...');
+      
+      // Get current user's company
+      final userData = await _apiClient.read('res.users', _apiClient.userId!, 
+        fields: ['company_id', 'company_ids']
+      );
+      
+      if (userData['company_id'] != null) {
+        final companyId = userData['company_id'] is List 
+            ? userData['company_id'][0] 
+            : userData['company_id'];
+            
+        print('Found user company ID: $companyId');
+        
+        final companyData = await _apiClient.searchRead(
+          'res.company',
+          domain: [['id', '=', companyId]],
+          fields: [
+            'id', 'name', 'display_name', 'email', 'phone', 'website', 'vat',
+            'street', 'street2', 'city', 'zip', 'country_id', 'state_id',
+            'currency_id', 'company_registry', 'active', 'logo', 'partner_id'
+          ],
+        );
+        
+        if (companyData.isNotEmpty) {
+          // Clean company data for proper parsing
+          final cleanedData = _cleanCompanyData(companyData.first);
+          _company = ResCompany.fromJson(cleanedData);
+          print('✅ Loaded company from user context: ${_company!.name}');
+          await _localStorage.saveCompany(cleanedData);
+          return;
+        }
+      }
+      
+      // Last resort: create a fallback
+      _createFallbackCompany();
+      
+    } catch (e) {
+      print('❌ Alternative company load failed: $e');
+      _createFallbackCompany();
+    }
+  }
+
+  /// Create fallback company data
+  void _createFallbackCompany() {
+    print('📝 Creating fallback company data...');
+    _company = ResCompany(
+      id: 1,
+      name: 'نقطة البيع',
+      email: 'pos@company.com',
+      phone: '+966 11 123 4567',
+      website: 'https://company.com',
+      vatNumber: '123456789012345',
+      street: 'الرياض',
+      city: 'الرياض',
+      companyRegistry: '1010123456',
+    );
+  }
+
+  /// Clean company data to handle Odoo's [id, name] format
+  Map<String, dynamic> _cleanCompanyData(Map<String, dynamic> rawData) {
+    final cleaned = Map<String, dynamic>.from(rawData);
+    
+    // Convert [id, name] fields to just id
+    final fieldsToClean = ['country_id', 'state_id', 'currency_id', 'partner_id'];
+    
+    for (final field in fieldsToClean) {
+      if (cleaned[field] is List && (cleaned[field] as List).isNotEmpty) {
+        cleaned[field] = (cleaned[field] as List)[0];
+        print('Cleaned $field: ${rawData[field]} -> ${cleaned[field]}');
+      } else if (cleaned[field] == false) {
+        cleaned[field] = null;
+        print('Cleaned $field: false -> null');
+      }
+    }
+    
+    // Convert false values to null for string fields
+    final stringFields = ['email', 'phone', 'website', 'vat', 'street', 'street2', 
+                         'city', 'zip', 'company_registry', 'logo', 'display_name'];
+    
+    for (final field in stringFields) {
+      if (cleaned[field] == false) {
+        cleaned[field] = null;
+        print('Cleaned string field $field: false -> null');
+      }
+    }
+    
+    return cleaned;
   }
 
   /// Load products from server

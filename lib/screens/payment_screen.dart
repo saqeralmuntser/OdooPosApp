@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../backend/providers/enhanced_pos_provider.dart';
+import '../backend/models/pos_payment_method.dart';
 import '../theme/app_theme.dart';
 import '../widgets/numpad_widget.dart';
 
@@ -13,17 +15,10 @@ class PaymentScreen extends StatefulWidget {
 }
 
 class _PaymentScreenState extends State<PaymentScreen> {
-  String _selectedPaymentMethod = 'Card';
+  String _selectedPaymentMethod = '';
   double _currentAmount = 0.0;
   final _amountController = TextEditingController();
   bool _invoiceEnabled = false;
-
-  final List<String> _paymentMethods = [
-    'Card',
-    'Cash',
-    'Mobile Payment',
-    'Bank Transfer',
-  ];
 
   @override
   void initState() {
@@ -32,6 +27,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final posProvider = Provider.of<EnhancedPOSProvider>(context, listen: false);
       _currentAmount = posProvider.remainingAmount;
       _amountController.text = _currentAmount.toStringAsFixed(2);
+      
+      // Set default payment method to first available method
+      final availableMethods = posProvider.availablePaymentMethods;
+      if (availableMethods.isNotEmpty) {
+        _selectedPaymentMethod = availableMethods.first.name;
+      }
     });
   }
 
@@ -139,17 +140,77 @@ class _PaymentScreenState extends State<PaymentScreen> {
       }
 
       if (result.success) {
+        // Print receipt automatically
+        try {
+          print('Printing receipt automatically...');
+          final printResult = await posProvider.printReceipt(
+            order: result.order,
+            orderLines: result.savedOrderLines ?? [],
+            payments: result.savedPayments ?? {},
+            customer: result.savedCustomer,
+            company: posProvider.company,
+            webPrintFallback: true,
+          );
+
+          if (printResult['successful'] == true) {
+            print('Receipt printed successfully');
+          } else {
+            print('Print failed: ${printResult['message']}');
+            // Show print error but don't stop the flow
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('تحذير: فشل في طباعة الإيصال - ${printResult['message']?['title'] ?? 'خطأ غير معروف'}'),
+                  backgroundColor: Colors.orange,
+                  duration: const Duration(seconds: 3),
+                ),
+              );
+            }
+          }
+        } catch (e) {
+          print('Error during automatic printing: $e');
+          // Show print error but don't stop the flow
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('تحذير: فشل في طباعة الإيصال - $e'),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+
         // Show success message
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(result.message ?? 'تم إرسال الطلب بنجاح'),
+              content: Text(result.message ?? 'تم إرسال الطلب بنجاح والطباعة'),
               backgroundColor: Colors.green,
             ),
           );
           
-          // Navigate to receipt screen
-          Navigator.of(context).pushNamed('/receipt');
+          // Use saved data from result (before provider was cleared)
+          final orderLines = result.savedOrderLines ?? [];
+          final payments = result.savedPayments ?? {};
+          final customer = result.savedCustomer;
+          
+          // Debug: Print data before navigation
+          print('Payment Screen - Navigating to receipt with:');
+          print('  Order: ${result.order?.name}');
+          print('  Order Lines Count: ${orderLines.length}');
+          print('  Payments: $payments');
+          print('  Customer: ${customer?.name}');
+          print('  Company: ${posProvider.company?.name}');
+          
+          // Navigate to receipt screen with the completed order
+          Navigator.of(context).pushNamed('/receipt', arguments: {
+            'order': result.order,
+            'orderLines': orderLines,
+            'payments': payments,
+            'customer': customer,
+            'company': posProvider.company,
+          });
         }
       } else {
         // Show error message
@@ -178,6 +239,46 @@ class _PaymentScreenState extends State<PaymentScreen> {
         );
       }
     }
+  }
+  
+  /// Get appropriate icon for payment method
+  IconData _getPaymentMethodIcon(POSPaymentMethod method) {
+    final methodName = method.name.toLowerCase();
+    
+    // Check if it's a cash method
+    if (method.isCash || methodName.contains('cash') || methodName.contains('نقد')) {
+      return Icons.money;
+    }
+    
+    // Check if it's a card/terminal method
+    if (method.isCard || method.requiresTerminal || 
+        methodName.contains('card') || methodName.contains('بطاقة') ||
+        methodName.contains('visa') || methodName.contains('mastercard')) {
+      return Icons.credit_card;
+    }
+    
+    // Check for mobile/digital payments
+    if (methodName.contains('mobile') || methodName.contains('digital') ||
+        methodName.contains('محفظة') || methodName.contains('جوال') ||
+        methodName.contains('apple') || methodName.contains('google') ||
+        methodName.contains('samsung') || methodName.contains('stc')) {
+      return Icons.phone_android;
+    }
+    
+    // Check for bank transfer
+    if (methodName.contains('transfer') || methodName.contains('bank') ||
+        methodName.contains('تحويل') || methodName.contains('بنك')) {
+      return Icons.account_balance;
+    }
+    
+    // Check for cheque/check
+    if (methodName.contains('cheque') || methodName.contains('check') ||
+        methodName.contains('شيك')) {
+      return Icons.receipt_long;
+    }
+    
+    // Default payment icon
+    return Icons.payment;
   }
 
   @override
@@ -310,55 +411,286 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Select Payment Method',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                              ),
+                              Row(
+                                  children: [
+                                    const Text(
+                                      'Select Payment Method',
+                                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                                    ),
+                                    const Spacer(),
+                                    Consumer<EnhancedPOSProvider>(
+                                      builder: (context, provider, _) {
+                                        final config = provider.selectedConfig;
+                                        final configName = config?.name ?? 'No Config';
+                                        final availableMethods = provider.availablePaymentMethods;
+                                        
+                                        return Column(
+                                          crossAxisAlignment: CrossAxisAlignment.end,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              'Config: $configName',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                color: AppTheme.secondaryColor,
+                                              ),
+                                            ),
+                                            Text(
+                                              '${availableMethods.length} طرق دفع متاحة',
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                color: AppTheme.secondaryColor,
+                                                fontStyle: FontStyle.italic,
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
                               const SizedBox(height: 12),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: _paymentMethods.map((method) {
-                                  final isSelected = _selectedPaymentMethod == method;
-                                  return ChoiceChip(
-                                    label: Text(method),
-                                    selected: isSelected,
-                                    onSelected: (selected) {
-                                      if (selected) {
+                              // Payment methods from POS Config
+                              Consumer<EnhancedPOSProvider>(
+                                builder: (context, provider, _) {
+                                  final availableMethods = provider.availablePaymentMethods;
+                                  
+                                  if (availableMethods.isEmpty) {
+                                    return Card(
+                                      color: Colors.orange.shade50,
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(16),
+                                        child: Column(
+                                          children: [
+                                            const Icon(
+                                              Icons.warning_amber_rounded,
+                                              color: Colors.orange,
+                                              size: 32,
+                                            ),
+                                            const SizedBox(height: 8),
+                                            const Text(
+                                              'لا توجد طرق دفع مرتبطة بـ POS Config الحالي',
+                                              style: TextStyle(
+                                                color: Colors.orange,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              'يجب إعداد طرق الدفع في Odoo لـ ${provider.selectedConfig?.name ?? "POS Config"}',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey,
+                                              ),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  
+                                  // Ensure selected method is valid
+                                  if (_selectedPaymentMethod.isEmpty || 
+                                      !availableMethods.any((m) => m.name == _selectedPaymentMethod)) {
+                                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                                      if (mounted) {
                                         setState(() {
-                                          _selectedPaymentMethod = method;
+                                          _selectedPaymentMethod = availableMethods.first.name;
                                         });
                                       }
-                                    },
-                                    selectedColor: AppTheme.primaryColor.withOpacity(0.2),
-                                    labelStyle: TextStyle(
-                                      color: isSelected ? AppTheme.primaryColor : AppTheme.blackColor,
-                                    ),
+                                    });
+                                  }
+                                  
+                                  return Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: availableMethods.map((method) {
+                                      final isSelected = _selectedPaymentMethod == method.name;
+                                      return ChoiceChip(
+                                        label: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            // Add icon based on payment type
+                                            Icon(
+                                              _getPaymentMethodIcon(method),
+                                              size: 16,
+                                              color: isSelected ? AppTheme.primaryColor : AppTheme.blackColor,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(method.name),
+                                          ],
+                                        ),
+                                        selected: isSelected,
+                                        onSelected: (selected) {
+                                          if (selected) {
+                                            setState(() {
+                                              _selectedPaymentMethod = method.name;
+                                            });
+                                          }
+                                        },
+                                        selectedColor: AppTheme.primaryColor.withOpacity(0.2),
+                                        labelStyle: TextStyle(
+                                          color: isSelected ? AppTheme.primaryColor : AppTheme.blackColor,
+                                        ),
+                                      );
+                                    }).toList(),
                                   );
-                                }).toList(),
-                              ),
-                              const SizedBox(height: 16),
-
-                              // Amount input
-                              TextField(
-                                controller: _amountController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Amount',
-                                  prefixText: 'SR ',
-                                ),
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                onChanged: (value) {
-                                  _currentAmount = double.tryParse(value) ?? 0.0;
                                 },
                               ),
                               const SizedBox(height: 16),
 
+                              // Amount input
+                              Consumer<EnhancedPOSProvider>(
+                                builder: (context, provider, _) {
+                                  final remaining = provider.remainingAmount;
+                                  return TextField(
+                                    controller: _amountController,
+                                    decoration: InputDecoration(
+                                      labelText: 'Amount',
+                                      prefixText: 'SR ',
+                                      helperText: remaining > 0 
+                                          ? 'Remaining: ${currencyFormat.format(remaining)}'
+                                          : 'Order fully paid',
+                                      helperStyle: TextStyle(
+                                        color: remaining > 0 ? Colors.orange : Colors.green,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                    onChanged: (value) {
+                                      setState(() {
+                                        _currentAmount = double.tryParse(value) ?? 0.0;
+                                      });
+                                    },
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Payment method info
+                              Consumer<EnhancedPOSProvider>(
+                                builder: (context, provider, _) {
+                                  final selectedMethod = provider.getPaymentMethodByName(_selectedPaymentMethod);
+                                  if (selectedMethod != null) {
+                                    return Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.backgroundColor,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: AppTheme.borderColor,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            _getPaymentMethodIcon(selectedMethod),
+                                            color: AppTheme.primaryColor,
+                                            size: 20,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  selectedMethod.name,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                                if (selectedMethod.isCash)
+                                                  const Text(
+                                                    'Cash counting enabled',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: AppTheme.secondaryColor,
+                                                    ),
+                                                  ),
+                                                if (selectedMethod.requiresTerminal)
+                                                  const Text(
+                                                    'Requires payment terminal',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: AppTheme.secondaryColor,
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }
+                                  return const SizedBox.shrink();
+                                },
+                              ),
+                              const SizedBox(height: 16),
+
+                              // Debug info (only in debug mode)
+                              if (kDebugMode)
+                                Consumer<EnhancedPOSProvider>(
+                                  builder: (context, provider, _) {
+                                    final config = provider.selectedConfig;
+                                    return Container(
+                                      margin: const EdgeInsets.only(bottom: 16),
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue.shade50,
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: Colors.blue.shade200),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Debug Info:',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.blue.shade700,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Config Payment IDs: ${config?.paymentMethodIds}',
+                                            style: TextStyle(
+                                              fontSize: 9,
+                                              color: Colors.blue.shade600,
+                                            ),
+                                          ),
+                                          Text(
+                                            'All Methods: ${provider.paymentMethods.map((m) => '${m.id}:${m.name}').join(', ')}',
+                                            style: TextStyle(
+                                              fontSize: 9,
+                                              color: Colors.blue.shade600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                              
                               // Add payment button
                               SizedBox(
                                 width: double.infinity,
                                 child: ElevatedButton(
-                                  onPressed: _currentAmount > 0 ? _addPayment : null,
-                                  child: Text('Add ${currencyFormat.format(_currentAmount)}'),
+                                  onPressed: _currentAmount > 0 && _selectedPaymentMethod.isNotEmpty ? _addPayment : null,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.primaryColor,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                  ),
+                                  child: Text(
+                                    _selectedPaymentMethod.isEmpty 
+                                        ? 'Select Payment Method'
+                                        : 'Add ${currencyFormat.format(_currentAmount)}',
+                                    style: const TextStyle(fontSize: 16),
+                                  ),
                                 ),
                               ),
                             ],

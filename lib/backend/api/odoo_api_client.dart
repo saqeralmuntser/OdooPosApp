@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 import '../storage/local_storage.dart';
 
 /// Odoo API Client
@@ -67,11 +68,17 @@ class OdooApiClient {
       },
     ));
 
-    // Add interceptors for logging and error handling
+    // Add interceptors for logging and error handling (minimal logging)
     _dio.interceptors.add(LogInterceptor(
-      requestBody: true,
-      responseBody: true,
-      error: true,
+      requestBody: false,  // إخفاء تفاصيل الطلب
+      responseBody: false, // إخفاء تفاصيل الاستجابة  
+      error: true,         // إظهار الأخطاء فقط
+      logPrint: (object) {
+        // طباعة مبسطة للطلبات المهمة فقط
+        if (object.toString().contains('ERROR') || object.toString().contains('statusCode: 4') || object.toString().contains('statusCode: 5')) {
+          debugPrint('🔴 API Error: $object');
+        }
+      },
     ));
 
     _dio.interceptors.add(InterceptorsWrapper(

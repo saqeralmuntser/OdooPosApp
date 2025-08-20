@@ -41,22 +41,14 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
 
 
   void _showAttributeSelectionPopup(BuildContext context, ProductProduct product, EnhancedPOSProvider posProvider) {
-    print('=== Product Debug Info ===');
-    print('Product: ${product.displayName}');
-    print('Product ID: ${product.id}');
-    print('Product Template ID: ${product.productTmplId}');
-    print('Has Variants: ${product.hasVariants}');
-    print('Variant Value IDs: ${product.productTemplateVariantValueIds}');
-    print('Product JSON: ${product.toJson()}');
-    print('========================');
+    
     
     // Check if product has variants/attributes using the backend service
     bool hasAttributes = posProvider.backendService.productHasAttributes(product);
-    print('Has Attributes (from template): $hasAttributes');
     
     if (!hasAttributes) {
       // Product has no attributes, add directly to order
-      print('No attributes - adding directly');
+     
       _addProductToOrder(context, product, posProvider);
       return;
     }

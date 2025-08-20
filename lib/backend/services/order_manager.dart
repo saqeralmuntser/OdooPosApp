@@ -452,6 +452,19 @@ class OrderManager {
     }
   }
 
+  /// Get current order data for receipt (before finalizing)
+  OrderReceiptData? getCurrentOrderDataForReceipt() {
+    if (_currentOrder == null || _currentOrderLines.isEmpty) {
+      return null;
+    }
+
+    return OrderReceiptData(
+      order: _currentOrder!,
+      orderLines: List<POSOrderLine>.from(_currentOrderLines),
+      payments: List<POSPayment>.from(_currentPayments),
+    );
+  }
+
   /// Finalize order (mark as paid)
   Future<OrderResult> finalizeOrder() async {
     if (_currentOrder == null) {
@@ -495,12 +508,23 @@ class OrderManager {
         amountReturn: change,
       );
 
+      // Save receipt data BEFORE clearing
+      final receiptData = OrderReceiptData(
+        order: _currentOrder!,
+        orderLines: List<POSOrderLine>.from(_currentOrderLines),
+        payments: List<POSPayment>.from(_currentPayments),
+      );
+
       await _saveFinalizedOrder();
       
       // Clear current order
       await _clearCurrentOrder();
 
-      return OrderResult(success: true, order: _currentOrder);
+      return OrderResult(
+        success: true, 
+        order: receiptData.order,
+        receiptData: receiptData,
+      );
     } catch (e) {
       return OrderResult(success: false, error: 'Failed to finalize order: $e');
     }
@@ -857,12 +881,62 @@ class OrderResult {
   final bool success;
   final POSOrder? order;
   final String? error;
+  final OrderReceiptData? receiptData;
 
   OrderResult({
     required this.success,
     this.order,
     this.error,
+    this.receiptData,
   });
+}
+
+/// Data structure for receipt information
+class OrderReceiptData {
+  final POSOrder order;
+  final List<POSOrderLine> orderLines;
+  final List<POSPayment> payments;
+
+  OrderReceiptData({
+    required this.order,
+    required this.orderLines,
+    required this.payments,
+  });
+
+  /// Convert payments to map format for compatibility
+  Map<String, double> get paymentsMap {
+    final Map<String, double> paymentsByMethod = {};
+    
+    for (final payment in payments) {
+      String methodName;
+      
+      if (payment.isChange) {
+        methodName = 'Change';
+      } else {
+        // Try to get payment method name, fallback to generic names
+        switch (payment.paymentMethodId) {
+          case 1:
+            methodName = 'Cash';
+            break;
+          case 2:
+            methodName = 'Card';
+            break;
+          case 3:
+            methodName = 'Customer Account';
+            break;
+          case 4:
+            methodName = 'Cash2';
+            break;
+          default:
+            methodName = 'Payment Method ${payment.paymentMethodId}';
+        }
+      }
+      
+      paymentsByMethod[methodName] = (paymentsByMethod[methodName] ?? 0.0) + payment.amount;
+    }
+    
+    return paymentsByMethod;
+  }
 }
 
 class OrderLineResult {

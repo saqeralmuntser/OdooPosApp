@@ -17,6 +17,7 @@ class ActionsMenuDialog extends StatelessWidget {
       '1 Guests',
       'Customer Note',
       'Pricelist',
+      'Printer Management',
       'Refund',
       'Switch to Takeaway',
       'Cancel Order',
@@ -91,6 +92,9 @@ class ActionsMenuDialog extends StatelessWidget {
         break;
       case 'Pricelist':
         _showPricelistDialog(context);
+        break;
+      case 'Printer Management':
+        Navigator.of(context).pushNamed('/printers');
         break;
       case 'Cancel Order':
         _showCancelOrderDialog(context);

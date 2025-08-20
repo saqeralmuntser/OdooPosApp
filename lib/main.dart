@@ -8,6 +8,7 @@ import 'screens/main_pos_screen.dart';
 import 'screens/payment_screen.dart';
 import 'screens/receipt_screen.dart';
 import 'screens/customer_management_screen.dart';
+import 'screens/printer_management_screen.dart';
 
 import 'backend/migration/backend_migration.dart';
 import 'theme/app_theme.dart';
@@ -41,6 +42,7 @@ class POSApp extends StatelessWidget {
           '/payment': (context) => const PaymentScreen(),
           '/receipt': (context) => const ReceiptScreen(),
           '/customers': (context) => const CustomerManagementScreen(),
+          '/printers': (context) => const PrinterManagementScreen(),
         },
       ),
     );

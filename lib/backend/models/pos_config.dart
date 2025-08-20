@@ -1,4 +1,5 @@
 import 'package:json_annotation/json_annotation.dart';
+import 'pos_printer.dart';
 
 part 'pos_config.g.dart';
 
@@ -104,12 +105,24 @@ class POSConfig {
   final String? receiptHeader;
   @JsonKey(name: 'receipt_footer', fromJson: _extractNullableString)
   final String? receiptFooter;
+  @JsonKey(name: 'receipt_printer_type')
+  final ReceiptPrinterType? receiptPrinterType;
+  
+  // Printer Settings
+  @JsonKey(name: 'is_order_printer')
+  final bool? isOrderPrinter;
+  @JsonKey(name: 'printer_method')
+  final PrinterMethod? printerMethod;
   
   // Network Settings
   @JsonKey(name: 'proxy_ip', fromJson: _extractNullableString)
   final String? proxyIp;
   @JsonKey(name: 'other_devices', fromJson: _extractNullableString)
   final String? otherDevices;
+  
+  // Cashier Printer IP  
+  @JsonKey(name: 'epson_printer_ip', fromJson: _extractNullableString)
+  final String? epsonPrinterIp;
   
   // Relationships (stored as IDs)
   @JsonKey(name: 'payment_method_ids')
@@ -151,8 +164,12 @@ class POSConfig {
     this.cashControl,
     this.receiptHeader,
     this.receiptFooter,
+    this.receiptPrinterType,
+    this.isOrderPrinter,
+    this.printerMethod,
     this.proxyIp,
     this.otherDevices,
+    this.epsonPrinterIp,
     this.paymentMethodIds,
     this.availablePricelistIds,
     this.printerIds,
@@ -192,8 +209,12 @@ class POSConfig {
     bool? cashControl,
     String? receiptHeader,
     String? receiptFooter,
+    ReceiptPrinterType? receiptPrinterType,
+    bool? isOrderPrinter,
+    PrinterMethod? printerMethod,
     String? proxyIp,
     String? otherDevices,
+    String? epsonPrinterIp,
     List<int>? paymentMethodIds,
     List<int>? availablePricelistIds,
     List<int>? printerIds,
@@ -229,8 +250,12 @@ class POSConfig {
       cashControl: cashControl ?? this.cashControl,
       receiptHeader: receiptHeader ?? this.receiptHeader,
       receiptFooter: receiptFooter ?? this.receiptFooter,
+      receiptPrinterType: receiptPrinterType ?? this.receiptPrinterType,
+      isOrderPrinter: isOrderPrinter ?? this.isOrderPrinter,
+      printerMethod: printerMethod ?? this.printerMethod,
       proxyIp: proxyIp ?? this.proxyIp,
       otherDevices: otherDevices ?? this.otherDevices,
+      epsonPrinterIp: epsonPrinterIp ?? this.epsonPrinterIp,
       paymentMethodIds: paymentMethodIds ?? this.paymentMethodIds,
       availablePricelistIds: availablePricelistIds ?? this.availablePricelistIds,
       printerIds: printerIds ?? this.printerIds,

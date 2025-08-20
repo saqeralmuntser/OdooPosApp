@@ -1,8 +1,41 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import '../backend/models/pos_order.dart';
+import '../backend/models/pos_order_line.dart';
+import '../backend/models/res_partner.dart';
+import '../backend/models/res_company.dart';
 import '../backend/providers/enhanced_pos_provider.dart';
 import '../theme/app_theme.dart';
+
+/// Custom painter for dotted lines
+class DottedLinePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.grey
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+
+    const dashWidth = 3.0;
+    const dashSpace = 3.0;
+    double startX = 0;
+
+    while (startX < size.width) {
+      canvas.drawLine(
+        Offset(startX, 0),
+        Offset(startX + dashWidth, 0),
+        paint,
+      );
+      startX += dashWidth + dashSpace;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
 
 class ReceiptScreen extends StatefulWidget {
   const ReceiptScreen({super.key});
@@ -13,6 +46,67 @@ class ReceiptScreen extends StatefulWidget {
 
 class _ReceiptScreenState extends State<ReceiptScreen> {
   final _emailController = TextEditingController();
+  
+  // Receipt data from arguments
+  POSOrder? _order;
+  List<POSOrderLine> _orderLines = [];
+  Map<String, double> _payments = {};
+  ResPartner? _customer;
+  ResCompany? _company;
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    
+    // Get arguments passed from payment screen
+    final arguments = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    print('Receipt Screen - Arguments received: $arguments');
+    
+    if (arguments != null) {
+      _order = arguments['order'] as POSOrder?;
+      _orderLines = arguments['orderLines'] as List<POSOrderLine>? ?? [];
+      _payments = arguments['payments'] as Map<String, double>? ?? {};
+      _customer = arguments['customer'] as ResPartner?;
+      _company = arguments['company'] as ResCompany?;
+      
+      print('Receipt Screen - Order: ${_order?.name} (ID: ${_order?.id})');
+      print('Receipt Screen - Order Lines Count: ${_orderLines.length}');
+      for (int i = 0; i < _orderLines.length; i++) {
+        final line = _orderLines[i];
+        print('  Line $i: ${line.fullProductName} x ${line.qty} = ${line.priceSubtotalIncl}');
+      }
+      print('Receipt Screen - Payments: $_payments');
+      print('Receipt Screen - Customer: ${_customer?.name}');
+      print('Receipt Screen - Company: ${_company?.name}');
+      
+      // Force UI rebuild with new data
+      setState(() {});
+    } else {
+      print('Receipt Screen - No arguments received, using provider data');
+      // Fallback to provider data if no arguments passed
+      try {
+        final provider = Provider.of<EnhancedPOSProvider>(context, listen: false);
+        _orderLines = provider.orderLines;
+        _payments = provider.paymentsMap;
+        _customer = provider.selectedCustomer;
+        _company = provider.company;
+        
+        print('Receipt Screen - Fallback - Order Lines Count: ${_orderLines.length}');
+        for (int i = 0; i < _orderLines.length; i++) {
+          final line = _orderLines[i];
+          print('  Fallback Line $i: ${line.fullProductName} x ${line.qty} = ${line.priceSubtotalIncl}');
+        }
+        print('Receipt Screen - Fallback - Payments: $_payments');
+        print('Receipt Screen - Fallback - Customer: ${_customer?.name}');
+        print('Receipt Screen - Fallback - Company: ${_company?.name}');
+        
+        // Force UI rebuild
+        setState(() {});
+      } catch (e) {
+        print('Receipt Screen - Error getting provider data: $e');
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -20,34 +114,70 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
     super.dispose();
   }
 
-  void _printReceipt() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Receipt sent to printer'),
-        backgroundColor: Colors.green,
-      ),
-    );
-  }
-
-  void _emailReceipt() {
-    if (_emailController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter an email address'),
-          backgroundColor: Colors.red,
+  void _printReceipt() async {
+    final posProvider = Provider.of<EnhancedPOSProvider>(context, listen: false);
+    
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
         ),
       );
-      return;
-    }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Receipt sent to ${_emailController.text}'),
-        backgroundColor: Colors.green,
-      ),
-    );
-    _emailController.clear();
+      final printResult = await posProvider.printReceipt(
+        order: _order,
+        orderLines: _orderLines,
+        payments: _payments,
+        customer: _customer,
+        company: _company,
+        webPrintFallback: true,
+      );
+
+      // Hide loading
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+
+      if (printResult['successful'] == true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('تم إرسال الإيصال للطابعة بنجاح'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('فشل في الطباعة: ${printResult['message']?['title'] ?? 'خطأ غير معروف'}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Hide loading if still showing
+      if (mounted) {
+        Navigator.of(context).pop();
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطأ في الطباعة: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
   }
+
+
 
   void _newOrder() {
     // Navigate back to main POS screen for new order
@@ -56,6 +186,183 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
       (route) => false,
     );
   }
+  
+  /// Generate QR Code data for the receipt
+  String _generateQRData() {
+    final dateFormat = DateFormat('yyyy-MM-dd HH:mm:ss');
+    
+    // Create QR data with real invoice information (ZATCA compliant format for Saudi Arabia)
+    final qrData = {
+      'seller': _company?.name ?? 'POS System',
+      'vat_number': _company?.vatNumber ?? '123456789012345',
+      'timestamp': _order?.dateOrder != null ? dateFormat.format(_order!.dateOrder) : dateFormat.format(DateTime.now()),
+      'total': (_order?.amountTotal ?? _calculateTotal()).toStringAsFixed(2),
+      'vat': (_order?.amountTax ?? _calculateTaxAmount()).toStringAsFixed(2),
+      'order_id': _order?.name ?? _getOrderNumber(),
+    };
+    
+    // Convert to string format for QR
+    return qrData.entries.map((e) => '${e.key}:${e.value}').join('|');
+  }
+  
+  /// Get company information from real data
+  Map<String, String> _getCompanyInfo() {
+    if (_company != null) {
+      return {
+        'name': _company!.name,
+        'address': _company!.fullAddress.isNotEmpty ? _company!.fullAddress : 'الرياض، المملكة العربية السعودية',
+        'phone': _company!.phone ?? '+966 11 123 4567',
+        'email': _company!.email ?? 'info@company.com',
+        'website': _company!.website ?? 'https://company.com',
+        'vat': _company!.formattedVatNumber.isNotEmpty ? _company!.formattedVatNumber : 'ض.ب: 123456789012345',
+        'cr': _company!.formattedCompanyRegistry.isNotEmpty ? _company!.formattedCompanyRegistry : 'س.ت: 1010123456',
+      };
+    }
+    
+    // Fallback if no company data
+    return {
+      'name': 'متجر نقطة البيع',
+      'address': 'الرياض، المملكة العربية السعودية',
+      'phone': '+966 11 123 4567',
+      'email': 'info@company.com',
+      'website': 'https://company.com',
+      'vat': 'ض.ب: 123456789012345',
+      'cr': 'س.ت: 1010123456',
+    };
+  }
+  
+  /// Get real order number from order data
+  String _getOrderNumber() {
+    if (_order?.name != null) {
+      // Extract the sequence number from order name (e.g., 'POS/2023/001' -> '001')
+      final orderName = _order!.name;
+      final parts = orderName.split('/');
+      if (parts.length >= 3) {
+        return parts.last; // Get the last part (sequence number)
+      }
+      // If format is different, use last 3 characters
+      return orderName.length >= 3 ? orderName.substring(orderName.length - 3) : orderName;
+    }
+    
+    // Fallback - generate a simple number
+    final now = DateTime.now();
+    return (now.millisecondsSinceEpoch % 1000).toString().padLeft(3, '0');
+  }
+  
+  /// Get full order ID
+  String _getOrderId() {
+    return _order?.name ?? 'Order ${_getOrderNumber()}';
+  }
+  
+  /// Calculate total from order lines
+  double _calculateTotal() {
+    return _orderLines.fold(0.0, (sum, line) => sum + line.priceSubtotalIncl);
+  }
+  
+  /// Calculate subtotal from order lines
+  double _calculateSubtotal() {
+    return _orderLines.fold(0.0, (sum, line) => sum + line.priceSubtotal);
+  }
+  
+  /// Calculate tax amount from order lines
+  double _calculateTaxAmount() {
+    return _orderLines.fold(0.0, (sum, line) => sum + (line.priceSubtotalIncl - line.priceSubtotal));
+  }
+  
+
+
+  /// Get product attributes text for display
+  Future<String> _getProductAttributesText(POSOrderLine orderLine) async {
+    try {
+      // Check if order line has attribute names
+      if (orderLine.attributeNames != null && orderLine.attributeNames!.isNotEmpty) {
+        return '(${orderLine.attributeNames!.join(', ')})';
+      }
+      
+      // Check customer note as alternative
+      if (orderLine.customerNote != null && orderLine.customerNote!.isNotEmpty) {
+        return '(${orderLine.customerNote})';
+      }
+      
+      return '';
+    } catch (e) {
+      print('Error getting attribute text: $e');
+      return '';
+    }
+  }
+
+  /// Build company logo widget with error handling
+  Widget _buildCompanyLogo() {
+    try {
+      if (_company?.logo != null && _company!.logo!.isNotEmpty) {
+        return Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.memory(
+              base64Decode(_company!.logo!),
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
+              errorBuilder: (context, error, stackTrace) {
+                print('Error loading company logo: $error');
+                return _buildLogoFallback();
+              },
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error building company logo: $e');
+    }
+    
+    return _buildLogoFallback();
+  }
+
+  /// Build logo fallback widget
+  Widget _buildLogoFallback() {
+    final companyInfo = _getCompanyInfo();
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.business,
+            size: 32,
+            color: Colors.grey.shade600,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            companyInfo['name']!,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey.shade700,
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -64,274 +371,153 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
         title: const Text('Receipt'),
         automaticallyImplyLeading: false,
       ),
-      body: Consumer<EnhancedPOSProvider>(
-        builder: (context, posProvider, _) {
+      body: Builder(
+        builder: (context) {
           final currencyFormat = NumberFormat.currency(symbol: 'SR ');
           final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
-          final now = DateTime.now();
+          final orderDate = _order?.dateOrder ?? DateTime.now();
+          final companyInfo = _getCompanyInfo();
+          final orderNumber = _getOrderNumber();
+          final orderId = _getOrderId();
+          final qrData = _generateQRData();
+          final totalAmount = _order?.amountTotal ?? _calculateTotal();
+          final subtotalAmount = _calculateSubtotal();
+          final taxAmount = _order?.amountTax ?? _calculateTaxAmount();
 
-          return Row(
+
+          return Column(
             children: [
-              // Receipt preview
-              Expanded(
-                flex: 2,
-                child: Container(
-                  margin: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // Logo placeholder
-                        Container(
-                          height: 60,
-                          width: 150,
-                          decoration: BoxDecoration(
-                            color: AppTheme.primaryColor.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Center(
-                            child: Text(
-                              'Your Logo',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.primaryColor,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-
-                        // QR Code placeholder
-                        Container(
-                          height: 100,
-                          width: 100,
-                          decoration: BoxDecoration(
-                            color: AppTheme.backgroundColor,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            Icons.qr_code,
-                            size: 60,
-                            color: AppTheme.primaryColor,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-
-                        // Receipt title
-                        Text(
-                          'Simplified Tax Invoice',
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              // Action buttons at the top - Enhanced design
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    // Print Button
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _printReceipt,
+                        icon: const Icon(Icons.print, size: 20),
+                        label: const Text(
+                          'طباعة الإيصال',
+                          style: TextStyle(
+                            fontSize: 14,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(height: 8),
-
-                        // Order info
-                        Text(
-                          'Order ID: ${now.millisecondsSinceEpoch.toString().substring(8)}',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                        Text(
-                          dateFormat.format(now),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                        Text(
-                          'Table: ${posProvider.currentSession?.name ?? "1"}',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                        if (posProvider.selectedCustomer != null)
-                          Text(
-                            'Customer: ${posProvider.selectedCustomer!.name}',
-                            style: Theme.of(context).textTheme.bodySmall,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                        const SizedBox(height: 32),
-
-                        // Items
+                          elevation: 4,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    
+                    // New Order Button
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _newOrder,
+                        icon: const Icon(Icons.add_shopping_cart, size: 20),
+                        label: const Text(
+                          'طلب جديد',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Receipt content
+              Expanded(
+                child: Center(
+            child: Container(
+              width: 302, // 80mm = ~302 pixels (at 96 DPI)
+              margin: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Company Logo - Compact for 80mm
                         Container(
-                          width: double.infinity,
+                          height: 80,
                           child: Column(
                             children: [
-                              // Header
-                              Container(
-                                padding: const EdgeInsets.symmetric(vertical: 8),
-                                decoration: const BoxDecoration(
-                                  border: Border(
-                                    bottom: BorderSide(color: AppTheme.borderColor),
-                                  ),
-                                ),
-                                child: const Row(
-                                  children: [
-                                    Expanded(
-                                      flex: 3,
-                                      child: Text(
-                                        'Item',
-                                        style: TextStyle(fontWeight: FontWeight.bold),
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: Text(
-                                        'Qty',
-                                        style: TextStyle(fontWeight: FontWeight.bold),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: Text(
-                                        'Price',
-                                        style: TextStyle(fontWeight: FontWeight.bold),
-                                        textAlign: TextAlign.right,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-
-                              // Items list
-                              ...posProvider.orderLines.map(
-                                (item) => Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                  child: Column(
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            flex: 3,
-                                            child: Column(
-                                                                            crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  item.fullProductName ?? 'Unknown Product',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                // Show attributes if they exist
-                                if (item.hasCustomAttributes) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    item.attributesDisplay,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey[600],
-                                      fontStyle: FontStyle.italic,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                                            ),
-                                          ),
-                                          Expanded(
-                                            child: Text(
-                                              item.qty.toString(),
-                                              textAlign: TextAlign.center,
-                                            ),
-                                          ),
-                                          Expanded(
-                                            child: Text(
-                                              currencyFormat.format(item.priceSubtotalIncl),
-                                              textAlign: TextAlign.right,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-
-                              const SizedBox(height: 16),
-
-                              // Summary
-                              Container(
-                                padding: const EdgeInsets.symmetric(vertical: 8),
-                                decoration: const BoxDecoration(
-                                  border: Border(
-                                    top: BorderSide(color: AppTheme.borderColor),
-                                  ),
-                                ),
-                                child: Column(
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        const Text('Untaxed Amount:'),
-                                        Text(currencyFormat.format(posProvider.subtotal)),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        const Text('VAT (15%):'),
-                                        Text(currencyFormat.format(posProvider.taxAmount)),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(
-                                          'الإجمالي / TOTAL:',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
-                                          ),
-                                        ),
-                                        Text(
-                                          currencyFormat.format(posProvider.total),
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
-                                            color: AppTheme.primaryColor,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-
-                              // Payment info
-                              if (posProvider.paymentsMap.isNotEmpty) ...[
+                              // Show company logo if available
+                              if (_company?.logo != null && _company!.logo!.isNotEmpty) ...[
                                 Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                  decoration: const BoxDecoration(
-                                    border: Border(
-                                      top: BorderSide(color: AppTheme.borderColor),
-                                    ),
-                                  ),
+                                  height: 60,
+                                  width: 80,
+                                  margin: const EdgeInsets.only(bottom: 4),
+                                  child: _buildCompanyLogo(),
+                                ),
+                              ] else ...[
+                                // Logo placeholder with company name
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      const Text(
-                                        'Payment Information:',
-                                        style: TextStyle(fontWeight: FontWeight.bold),
+                                      // Main company name in bold
+                                      Text(
+                                        companyInfo['name']!.toUpperCase(),
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w900,
+                                          color: Colors.black,
+                                          letterSpacing: 1.0,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                      const SizedBox(height: 8),
-                                      ...posProvider.paymentsMap.entries.map(
-                                        (entry) => Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text(entry.key),
-                                            Text(currencyFormat.format(entry.value)),
-                                          ],
+                                      // Orange accent bar
+                                      Container(
+                                        margin: const EdgeInsets.only(top: 2),
+                                        width: 60,
+                                        height: 3,
+                                        decoration: BoxDecoration(
+                                          color: Colors.orange,
+                                          borderRadius: BorderRadius.circular(2),
                                         ),
                                       ),
                                     ],
@@ -341,128 +527,476 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                             ],
                           ),
                         ),
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 20),
 
-                        // Footer
-                        const Text(
-                          'Powered by Odoo',
-                          style: TextStyle(
-                            color: AppTheme.secondaryColor,
-                            fontSize: 12,
+                        // QR Code - Compact for 80mm
+                        Container(
+                          child: QrImageView(
+                            data: qrData,
+                            version: QrVersions.auto,
+                            size: 100,
+                            backgroundColor: Colors.white,
+                            foregroundColor: Colors.black,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        
+                        // Company Information - Compact for 80mm
+                        Container(
+                          child: Column(
+                            children: [
+                              Text(
+                                companyInfo['name']!,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                ),
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                companyInfo['phone']!,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey.shade600,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'VAT: ${companyInfo['vat']!.replaceAll('ض.ب: ', '')}',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey.shade600,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                companyInfo['email']!,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey.shade600,
+                                ),
+                                textAlign: TextAlign.center,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              
+                              // Customer Information (if exists)
+                              if (_customer != null) ...[
+                                const SizedBox(height: 8),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade100,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        'العميل: ${_customer!.name}',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.black87,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      if (_customer!.phone != null || _customer!.mobile != null) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'هاتف: ${_customer!.phone ?? _customer!.mobile}',
+                                          style: const TextStyle(
+                                            fontSize: 9,
+                                            color: Colors.grey,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ],
+                                      if (_customer!.vatNumber != null && _customer!.vatNumber!.isNotEmpty) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'ض.ب: ${_customer!.vatNumber}',
+                                          style: const TextStyle(
+                                            fontSize: 9,
+                                            color: Colors.grey,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ],
+                                      if (_customer!.fullAddress.isNotEmpty) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          _customer!.fullAddress,
+                                          style: const TextStyle(
+                                            fontSize: 9,
+                                            color: Colors.grey,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ],
+                              
+                              const SizedBox(height: 6),
+                              Text(
+                                'Served by Administrator',
+                                style: const TextStyle(
+                                  fontSize: 9,
+                                  color: Colors.grey,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 30),
+
+                        // Order Number - Compact for 80mm
+                        Container(
+                          child: Column(
+                            children: [
+                              Text(
+                                orderNumber,
+                                style: const TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                orderId,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        
+                        // Receipt title - Compact
+                        Container(
+                          child: Column(
+                            children: [
+                              Text(
+                                'Simplified Tax Invoice',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'فاتورة ضريبية مبسطة',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 30),
+                        
+                        // Order date and time - Compact
+                        Text(
+                          dateFormat.format(orderDate),
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 30),
+
+                        // Debug message if no order lines
+                        if (_orderLines.isEmpty) ...[
+                          Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red),
+                            ),
+                            child: Column(
+                              children: [
+                                const Text(
+                                  'لا توجد بيانات طلب لعرضها',
+                                  style: TextStyle(
+                                    color: Colors.red,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'No order data to display',
+                                  style: TextStyle(
+                                    color: Colors.red,
+                                    fontSize: 14,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  'Order Lines: ${_orderLines.length}\nPayments: ${_payments.length}\nCompany: ${_company?.name ?? "None"}',
+                                  style: const TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 12,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+
+                        // Items - Clean table like the image
+                        Container(
+                          width: double.infinity,
+                          child: Column(
+                            children: [
+                              // Items list without header
+                              ..._orderLines.map(
+                                (item) {
+                                  return FutureBuilder<String>(
+                                    future: _getProductAttributesText(item),
+                                    builder: (context, snapshot) {
+                                      final attributesText = snapshot.data ?? '';
+                                      
+                                      return Container(
+                                        padding: const EdgeInsets.symmetric(vertical: 2),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            // Product name and attributes
+                                            Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  '${item.fullProductName ?? 'Unknown Product'}',
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    color: Colors.black,
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                ),
+                                                // Show attributes if available
+                                                if (attributesText.isNotEmpty)
+                                                  Padding(
+                                                    padding: const EdgeInsets.only(top: 1),
+                                                    child: Text(
+                                                      attributesText,
+                                                      style: const TextStyle(
+                                                        fontSize: 9,
+                                                        color: Colors.grey,
+                                                        fontStyle: FontStyle.italic,
+                                                      ),
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 2),
+                                            // Quantity, price and total
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                Text(
+                                                  '${item.qty.toStringAsFixed(0)} x ${currencyFormat.format(item.priceUnit)}',
+                                                                                            style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                                ),
+                                                Text(
+                                                  currencyFormat.format(item.priceSubtotalIncl),
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.black,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+
+                              const SizedBox(height: 20),
+
+                              // Summary section - dotted lines like the image
+                              Container(
+                                child: Column(
+                                  children: [
+                                    // Dotted separator
+                                    Container(
+                                      width: double.infinity,
+                                      height: 1,
+                                      margin: const EdgeInsets.symmetric(vertical: 10),
+                                      child: CustomPaint(
+                                        painter: DottedLinePainter(),
+                                      ),
+                                    ),
+                                    
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Text(
+                                          'Untaxed Amount',
+                                          style: TextStyle(fontSize: 14),
+                                        ),
+                                        Text(
+                                          currencyFormat.format(subtotalAmount),
+                                          style: const TextStyle(fontSize: 14),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Text(
+                                          'VAT Taxes',
+                                          style: TextStyle(fontSize: 14),
+                                        ),
+                                        Text(
+                                          currencyFormat.format(taxAmount),
+                                          style: const TextStyle(fontSize: 14),
+                                        ),
+                                      ],
+                                    ),
+                                    
+                                    // Another dotted separator
+                                    Container(
+                                      width: double.infinity,
+                                      height: 1,
+                                      margin: const EdgeInsets.symmetric(vertical: 10),
+                                      child: CustomPaint(
+                                        painter: DottedLinePainter(),
+                                      ),
+                                    ),
+                                    
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Text(
+                                          'TOTAL / الإجمالي',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                        Text(
+                                          currencyFormat.format(totalAmount),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+
+                              // Payment methods section - Compact
+                              if (_payments.isNotEmpty) ...[
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withOpacity(0.05),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.green.withOpacity(0.2)),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        '✅ تم الدفع بنجاح',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.green[700],
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 6),
+                                      ..._payments.entries.map(
+                                        (entry) => Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              entry.key,
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                            Text(
+                                              currencyFormat.format(entry.value),
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.black87,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        
+                        // Simple footer
+                        Container(
+                          child: Column(
+                            children: [
+                              Text(
+                                'Powered by Odoo',
+                                style: const TextStyle(
+                                  fontSize: 9,
+                                  color: Colors.grey,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
-              ),
-
-              // Right sidebar with controls
-              Container(
-                width: 350,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  border: Border(
-                    left: BorderSide(color: AppTheme.borderColor),
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Success message
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.green.withOpacity(0.3)),
-                        ),
-                        child: Column(
-                          children: [
-                            const Icon(
-                              Icons.check_circle,
-                              color: Colors.green,
-                              size: 48,
-                            ),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'Payment Successful',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.green,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Total Paid: ${currencyFormat.format(posProvider.totalPaid)}',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-
-                      // Email receipt
-                      Text(
-                        'Email Receipt',
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _emailController,
-                        decoration: const InputDecoration(
-                          hintText: 'e.g. johndoe@mail.com',
-                          prefixIcon: Icon(Icons.email),
-                        ),
-                        keyboardType: TextInputType.emailAddress,
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _emailReceipt,
-                          icon: const Icon(Icons.send),
-                          label: const Text('Send Email'),
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-
-                      // Print receipt
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _printReceipt,
-                          icon: const Icon(Icons.print),
-                          label: const Text('Print Full Receipt'),
-                        ),
-                      ),
-                      const Spacer(),
-
-                      // New order button
-                      SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: ElevatedButton.icon(
-                          onPressed: _newOrder,
-                          icon: const Icon(Icons.add_shopping_cart),
-                          label: const Text(
-                            'New Order',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
                 ),
               ),
             ],

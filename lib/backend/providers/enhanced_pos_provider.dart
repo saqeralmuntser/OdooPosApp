@@ -10,6 +10,7 @@ import '../models/pos_session.dart';
 import '../models/product_product.dart';
 import '../models/pos_category.dart';
 import '../models/res_partner.dart';
+import '../models/res_company.dart';
 import '../models/pos_order.dart';
 import '../models/pos_order_line.dart';
 import '../models/pos_payment.dart';
@@ -17,6 +18,10 @@ import '../models/pos_payment_method.dart';
 import '../models/product_pricelist.dart';
 import '../models/product_pricelist_item.dart';
 import '../services/pricing_service.dart';
+import '../services/printer_service.dart';
+import '../services/windows_printer_service.dart';
+import '../services/enhanced_windows_printer_service.dart';
+import '../services/printer_configuration_service.dart';
 
 /// Enhanced POS Provider
 /// Integrates the existing Flutter UI with the new Odoo 18 backend
@@ -25,6 +30,10 @@ class EnhancedPOSProvider with ChangeNotifier {
   final POSBackendService _backendService = POSBackendService();
   final HybridAuthService _hybridAuth = HybridAuthService();
   final PricingService _pricingService = PricingService();
+  final PrinterService _printerService = PrinterService();
+  final WindowsPrinterService _windowsPrinterService = WindowsPrinterService();
+  final EnhancedWindowsPrinterService _enhancedWindowsPrinterService = EnhancedWindowsPrinterService();
+  final PrinterConfigurationService _printerConfigService = PrinterConfigurationService();
 
   // Connection and authentication state
   bool _isInitialized = false;
@@ -35,6 +44,9 @@ class EnhancedPOSProvider with ChangeNotifier {
 
   // Getters for backend services
   POSBackendService get backendService => _backendService;
+  PrinterService get printerService => _printerService;
+  WindowsPrinterService get windowsPrinterService => _windowsPrinterService;
+  PrinterConfigurationService get printerConfigService => _printerConfigService;
   String? _currentUser;
   
   // Hybrid authentication state
@@ -100,6 +112,55 @@ class EnhancedPOSProvider with ChangeNotifier {
 
   // Payment methods getters
   List<POSPaymentMethod> get paymentMethods => List.unmodifiable(_paymentMethods);
+  
+  // Company getter
+  ResCompany? get company => _backendService.company;
+  
+  /// Get payment methods for the selected config
+  List<POSPaymentMethod> get availablePaymentMethods {
+    if (_selectedConfig == null) {
+      print('No POS config selected, returning all payment methods');
+      return List.unmodifiable(_paymentMethods);
+    }
+    
+    print('Selected config: ${_selectedConfig!.name} (ID: ${_selectedConfig!.id})');
+    print('Config payment method IDs: ${_selectedConfig!.paymentMethodIds}');
+    print('Available payment methods: ${_paymentMethods.map((m) => '${m.id}:${m.name}').toList()}');
+    
+    // If config has specific payment method IDs, filter by them
+    if (_selectedConfig!.paymentMethodIds != null && _selectedConfig!.paymentMethodIds!.isNotEmpty) {
+      final filteredMethods = _paymentMethods.where((method) => 
+        _selectedConfig!.paymentMethodIds!.contains(method.id)
+      ).toList();
+      
+      print('Filtered payment methods: ${filteredMethods.map((m) => '${m.id}:${m.name}').toList()}');
+      return filteredMethods;
+    }
+    
+    // If no specific payment methods configured, return all available
+    print('No payment methods configured for this config, returning all available methods');
+    return List.unmodifiable(_paymentMethods);
+  }
+  
+  /// Get payment method by ID
+  POSPaymentMethod? getPaymentMethodById(int id) {
+    try {
+      return _paymentMethods.firstWhere((method) => method.id == id);
+    } catch (e) {
+      return null;
+    }
+  }
+  
+  /// Get payment method by name
+  POSPaymentMethod? getPaymentMethodByName(String name) {
+    try {
+      return _paymentMethods.firstWhere((method) => 
+        method.name.toLowerCase() == name.toLowerCase()
+      );
+    } catch (e) {
+      return null;
+    }
+  }
 
   // Pricelist getters
   List<ProductPricelist> get availablePricelists => List.unmodifiable(_availablePricelists);
@@ -136,6 +197,13 @@ class EnhancedPOSProvider with ChangeNotifier {
 
       // Setup listeners
       _setupListeners();
+
+      // Initialize printer with web fallback
+      // In a real implementation, you would get the IoT Box URL from configuration
+      await initializePrinter(); // This will use web fallback by default
+      
+      // Initialize the new printer configuration service
+      await _printerConfigService.initialize();
 
       _isInitialized = true;
       _setLoading(false, 'POS system ready');
@@ -669,7 +737,97 @@ class EnhancedPOSProvider with ChangeNotifier {
     // Load pricelists for this configuration
     _loadPricelists();
     
+    // عرض معلومات الطابعات للـ POS Config المحدد
+    _displayPrinterInfo(config);
+    
+    // طباعة تفاصيل POS Config للتشخيص
+    printPosConfigDetails();
+    
+    // تهيئة إعدادات الطابعات للـ config المحدد
+    _initializePrinterConfig(config);
+    
     _safeNotifyListeners();
+  }
+
+  /// تهيئة إعدادات الطابعات للـ config المحدد
+  Future<void> _initializePrinterConfig(POSConfig config) async {
+    try {
+      debugPrint('🔄 Initializing printer configuration for POS Config: ${config.name}');
+      await _printerConfigService.initialize(posConfigId: config.id);
+      debugPrint('✅ Printer configuration initialized for ${config.name}');
+      
+      // تهيئة نظام الطباعة المحسن مع إعدادات POS الجديدة
+      await _enhancedWindowsPrinterService.initialize(posConfig: config);
+      debugPrint('✅ Enhanced Windows printer system re-initialized for ${config.name}');
+    } catch (e) {
+      debugPrint('❌ Error initializing printer configuration: $e');
+    }
+  }
+
+  /// عرض معلومات الطابعات للـ POS Config
+  void _displayPrinterInfo(POSConfig config) {
+    debugPrint('\n🏪 POS Config Selected: ${config.name} (ID: ${config.id})');
+    
+    // عرض الطابعات المتاحة في Windows
+    final availablePrinters = _windowsPrinterService.availablePrinters;
+    debugPrint('🖨️ Available Windows Printers: ${availablePrinters.length}');
+    for (var printer in availablePrinters) {
+      final status = printer.isDefault ? '(Default)' : '';
+      debugPrint('  - ${printer.name} $status');
+    }
+    
+    // عرض الطابعة المرتبطة بهذا الـ Config
+    final assignedPrinter = _windowsPrinterService.getPrinterForConfig(config.id);
+    if (assignedPrinter != null) {
+      debugPrint('✅ Assigned Printer for ${config.name}: $assignedPrinter');
+    } else {
+      debugPrint('⚠️ No printer assigned to ${config.name}');
+      if (availablePrinters.isNotEmpty) {
+        debugPrint('💡 Available printers to assign: ${availablePrinters.map((p) => p.name).join(', ')}');
+      }
+    }
+    debugPrint(''); // سطر فارغ للتنظيم
+  }
+
+  /// طباعة تفاصيل كاملة عن POS Config للتشخيص
+  void printPosConfigDetails() {
+    if (_selectedConfig == null) {
+      debugPrint('❌ No POS Config selected');
+      return;
+    }
+
+    final config = _selectedConfig!;
+    debugPrint('\n🔍 ==========================================');
+    debugPrint('🔍 DETAILED POS CONFIG ANALYSIS');
+    debugPrint('🔍 ==========================================');
+    debugPrint('📋 Basic Info:');
+    debugPrint('  🏷️ Name: ${config.name}');
+    debugPrint('  🆔 ID: ${config.id}');
+    debugPrint('  ✅ Active: ${config.active}');
+    debugPrint('  🏢 Company ID: ${config.companyId}');
+    
+    debugPrint('\n🖨️ PRINTER SETTINGS:');
+    debugPrint('  💰 epson_printer_ip: "${config.epsonPrinterIp ?? 'NULL'}"');
+    debugPrint('  🍳 printer_ids: ${config.printerIds ?? 'NULL'}');
+    debugPrint('  🌐 proxy_ip: "${config.proxyIp ?? 'NULL'}"');
+    debugPrint('  🍳 is_order_printer: ${config.isOrderPrinter ?? 'NULL'}');
+    
+    debugPrint('\n🔧 INTERFACE SETTINGS:');
+    debugPrint('  🖨️ iface_print_auto: ${config.ifacePrintAuto ?? 'NULL'}');
+    debugPrint('  ⏭️ iface_print_skip_screen: ${config.ifacePrintSkipScreen ?? 'NULL'}');
+    debugPrint('  🌉 iface_print_via_proxy: ${config.ifacePrintViaProxy ?? 'NULL'}');
+    debugPrint('  💰 iface_cashdrawer: ${config.ifaceCashdrawer ?? 'NULL'}');
+    
+    debugPrint('\n📄 RECEIPT SETTINGS:');
+    debugPrint('  📄 receipt_header: "${config.receiptHeader ?? 'NULL'}"');
+    debugPrint('  📄 receipt_footer: "${config.receiptFooter ?? 'NULL'}"');
+    
+    debugPrint('\n💳 PAYMENT SETTINGS:');
+    debugPrint('  💳 payment_method_ids: ${config.paymentMethodIds ?? 'NULL'}');
+    
+    debugPrint('\n🏪 OTHER SETTINGS:');
+    debugPrint('  📦 other_devices: "${config.otherDevices ?? 'NULL'}"');
+    debugPrint('🔍 ==========================================');
   }
 
   /// Clear session data
@@ -982,14 +1140,24 @@ class EnhancedPOSProvider with ChangeNotifier {
     }
 
     try {
-      // Find payment method by name
-      final paymentMethod = _paymentMethods.firstWhere(
+      // Find payment method by name from available methods for this config
+      final availableMethods = availablePaymentMethods;
+      final paymentMethod = availableMethods.firstWhere(
         (method) => method.name.toLowerCase() == methodName.toLowerCase(),
-        orElse: () => POSPaymentMethod(
-          id: 0, // Temporary ID for offline mode
-          name: methodName,
-          companyId: 1,
-        ),
+        orElse: () {
+          // If not found in config-specific methods, try all methods
+          final allMethodsMatch = getPaymentMethodByName(methodName);
+          if (allMethodsMatch != null) {
+            return allMethodsMatch;
+          }
+          
+          // Create temporary method for offline mode
+          return POSPaymentMethod(
+            id: 0, // Temporary ID for offline mode
+            name: methodName,
+            companyId: 1,
+          );
+        },
       );
 
       final result = await _backendService.orderManager.addPayment(
@@ -1065,15 +1233,13 @@ class EnhancedPOSProvider with ChangeNotifier {
   /// Helper method to get payment method name from payment
   String _getPaymentMethodName(POSPayment payment) {
     try {
-      final method = _paymentMethods.firstWhere(
-        (m) => m.id == payment.paymentMethodId,
-        orElse: () => POSPaymentMethod(
-          id: payment.paymentMethodId, 
-          name: 'Unknown Method',
-          companyId: 1,
-        ),
-      );
-      return method.name;
+      final method = getPaymentMethodById(payment.paymentMethodId);
+      if (method != null) {
+        return method.name;
+      }
+      
+      // Fallback to unknown method
+      return 'Unknown Method';
     } catch (e) {
       return 'Unknown Method';
     }
@@ -1128,24 +1294,47 @@ class EnhancedPOSProvider with ChangeNotifier {
         );
       }
 
+      // Get current order data directly from OrderManager BEFORE finalizing
+      final orderReceiptData = _backendService.orderManager.getCurrentOrderDataForReceipt();
+      final savedCustomer = _selectedCustomer;
+
+      if (orderReceiptData == null) {
+        return OrderValidationResult(
+          success: false,
+          error: 'لا توجد بيانات طلب لمعالجة الدفع',
+        );
+      }
+
       // Finalize order through order manager
       final result = await _backendService.orderManager.finalizeOrder();
 
       if (result.success) {
         _setLoading(false, 'تم إرسال الطلب بنجاح إلى Odoo');
         
-        // Clear current order data since it's been finalized
-        _currentOrder = null;
-        _orderLines.clear();
-        _payments.clear();
+        // Use the receipt data from the finalize result (which was saved before clearing)
+        final receiptData = result.receiptData ?? orderReceiptData;
+        
+        print('ValidateOrder - Data saved for receipt:');
+        print('  Order Lines Count: ${receiptData.orderLines.length}');
+        print('  Payments: ${receiptData.paymentsMap}');
+        print('  Customer: ${savedCustomer?.name}');
+        print('  Order: ${receiptData.order.name}');
+        
+        // Create result with saved data from OrderManager
+        final validationResult = OrderValidationResult(
+          success: true,
+          message: 'تم إرسال الطلب بنجاح إلى النظام',
+          order: receiptData.order,
+          savedOrderLines: receiptData.orderLines,
+          savedPayments: receiptData.paymentsMap,
+          savedCustomer: savedCustomer,
+        );
+        
+        // Clear selected customer since order is completed
         _selectedCustomer = null;
         _safeNotifyListeners();
 
-        return OrderValidationResult(
-          success: true,
-          message: 'تم إرسال الطلب بنجاح إلى النظام',
-          order: result.order,
-        );
+        return validationResult;
       } else {
         _setLoading(false, 'فشل في إرسال الطلب إلى Odoo');
         return OrderValidationResult(
@@ -1372,6 +1561,200 @@ class EnhancedPOSProvider with ChangeNotifier {
     }
   }
 
+  /// Initialize printer system
+  Future<void> initializePrinter({String? iotBoxUrl}) async {
+    // تهيئة نظام طابعات Windows
+    await _windowsPrinterService.initialize();
+    debugPrint('✅ Windows printer system initialized');
+    
+    // تهيئة نظام الطباعة المحسن مع إعدادات POS
+    await _enhancedWindowsPrinterService.initialize(posConfig: _selectedConfig);
+    debugPrint('✅ Enhanced Windows printer system initialized');
+    
+    // إبقاء النظام القديم كـ fallback
+    await _printerService.initialize();
+    debugPrint('📄 Fallback printer system ready');
+  }
+
+  /// Start printer discovery manually
+  Future<void> startPrinterDiscovery({bool continuous = false}) async {
+    await _printerService.startDiscovery(continuous: continuous);
+  }
+
+  /// Stop printer discovery
+  void stopPrinterDiscovery() {
+    _printerService.stopDiscovery();
+  }
+
+  /// Get discovered printers
+  List<dynamic> get discoveredPrinters => _printerService.discoveredPrinters;
+
+  /// Get configured printers
+  List<dynamic> get configuredPrinters => _printerService.configuredPrinters;
+
+  /// Get printers for current POS config
+  List<dynamic> get currentConfigPrinters {
+    if (_selectedConfig != null) {
+      return _printerService.getPrintersForConfig(_selectedConfig!.id);
+    }
+    return [];
+  }
+
+  /// Configure a printer for current POS config
+  Future<bool> configurePrinter(dynamic printer) async {
+    if (_selectedConfig != null) {
+      return await _printerService.configurePrinter(printer, posConfigId: _selectedConfig!.id);
+    }
+    return false;
+  }
+
+  /// Remove printer configuration
+  Future<bool> unconfigurePrinter(String printerId) async {
+    return await _printerService.unconfigurePrinter(printerId);
+  }
+
+  /// Test printer
+  Future<bool> testPrinter(dynamic printer) async {
+    return await _printerService.testPrinter(printer);
+  }
+
+  /// Check if printer is available
+  bool get isPrinterAvailable => _printerService.isAvailable;
+
+  /// Check if currently printing
+  bool get isPrinting => _printerService.isPrinting;
+
+  /// Get print jobs
+  List<dynamic> get printJobs => _printerService.allJobs;
+
+  /// Get pending jobs count
+  int get pendingJobsCount => _printerService.pendingJobsCount;
+
+  /// Print receipt with advanced queue system
+  Future<Map<String, dynamic>> printReceipt({
+    POSOrder? order,
+    List<POSOrderLine>? orderLines,
+    Map<String, double>? payments,
+    ResPartner? customer,
+    ResCompany? company,
+    bool webPrintFallback = true,
+  }) async {
+    try {
+      // Use provided data or fall back to current state
+      final actualOrderLines = orderLines ?? _orderLines;
+      final actualPayments = payments ?? paymentsMap;
+      final actualCustomer = customer ?? _selectedCustomer;
+      final actualCompany = company ?? this.company;
+      final actualOrder = order ?? _currentOrder;
+
+      // طباعة تفاصيل POS Config قبل الطباعة للتشخيص
+      printPosConfigDetails();
+      
+      // استخدم نظام الطباعة المحسن الذي يدعم طابعات متعددة (كاشير + مطبخ)
+      final result = await _enhancedWindowsPrinterService.printCompleteOrder(
+        order: actualOrder,
+        orderLines: actualOrderLines,
+        payments: actualPayments,
+        customer: actualCustomer,
+        company: actualCompany,
+      );
+
+      if (result['successful'] == true) {
+        print('Receipt printed successfully: ${result['message']['body']}');
+      } else {
+        print('Print failed: ${result['message']['body']}');
+      }
+
+      return result;
+    } catch (e) {
+      print('Error printing receipt: $e');
+      return {
+        'successful': false,
+        'message': {
+          'title': 'Print Error',
+          'body': 'An error occurred while printing: $e',
+        },
+      };
+    }
+  }
+
+  /// Print current order receipt
+  Future<Map<String, dynamic>> printCurrentOrderReceipt({bool webPrintFallback = true}) async {
+    return await printReceipt(webPrintFallback: webPrintFallback);
+  }
+
+  /// Print test page
+  Future<Map<String, dynamic>> printTest(String printerId) async {
+    return await _printerService.printTest(printerId);
+  }
+
+  /// Open cash drawer
+  Future<Map<String, dynamic>> openCashDrawer(String printerId) async {
+    return await _printerService.openCashDrawer(printerId);
+  }
+
+  /// Cancel print job
+  Future<bool> cancelPrintJob(String jobId) async {
+    return await _printerService.cancelPrintJob(jobId);
+  }
+
+  /// Retry print job
+  Future<bool> retryPrintJob(String jobId) async {
+    return await _printerService.retryPrintJob(jobId);
+  }
+
+  /// Clear completed print jobs
+  Future<void> clearCompletedJobs() async {
+    await _printerService.clearCompletedJobs();
+  }
+
+  /// طباعة تفاصيل POS Config (دالة عامة للاستخدام من UI)
+  void debugPrintPosConfig() {
+    printPosConfigDetails();
+  }
+
+  // === Windows Printer Management ===
+
+  /// الحصول على جميع طابعات Windows المتاحة
+  List<dynamic> get availableWindowsPrinters => _windowsPrinterService.availablePrinters;
+
+  /// ربط طابعة بـ POS Config
+  Future<void> setPrinterForConfig(int posConfigId, String printerName) async {
+    await _windowsPrinterService.setPrinterForConfig(posConfigId, printerName);
+    notifyListeners();
+    debugPrint('✅ Printer "$printerName" assigned to POS Config $posConfigId');
+  }
+
+  /// إزالة ربط طابعة من POS Config
+  Future<void> removePrinterForConfig(int posConfigId) async {
+    await _windowsPrinterService.removePrinterForConfig(posConfigId);
+    notifyListeners();
+    debugPrint('🗑️ Printer removed from POS Config $posConfigId');
+  }
+
+  /// الحصول على اسم الطابعة المرتبطة بـ POS Config
+  String? getPrinterForConfig(int posConfigId) {
+    return _windowsPrinterService.getPrinterForConfig(posConfigId);
+  }
+
+  /// طباعة اختبار على طابعة Windows
+  Future<Map<String, dynamic>> printWindowsTest(String printerName) async {
+    return await _windowsPrinterService.printTest(printerName);
+  }
+
+  /// تحديث قائمة طابعات Windows
+  Future<void> refreshWindowsPrinters() async {
+    await _windowsPrinterService.refreshPrinters();
+    notifyListeners();
+    debugPrint('🔄 Windows printers refreshed');
+  }
+
+  /// Printer service streams for real-time updates
+  Stream<List<dynamic>> get printersStream => _printerService.printersStream;
+  Stream<List<dynamic>> get printJobsStream => _printerService.jobsStream;
+  Stream<String> get printerDiscoveryStatusStream => _printerService.discoveryStatusStream;
+  Stream<String> get printQueueStatusStream => _printerService.queueStatusStream;
+
   void _safeNotifyListeners() {
     if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1389,11 +1772,17 @@ class OrderValidationResult {
   final String? error;
   final String? message;
   final POSOrder? order;
+  final List<POSOrderLine>? savedOrderLines;
+  final Map<String, double>? savedPayments;
+  final ResPartner? savedCustomer;
 
   OrderValidationResult({
     required this.success,
     this.error,
     this.message,
     this.order,
+    this.savedOrderLines,
+    this.savedPayments,
+    this.savedCustomer,
   });
 }

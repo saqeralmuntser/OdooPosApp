@@ -36,8 +36,18 @@ POSConfig _$POSConfigFromJson(Map<String, dynamic> json) => POSConfig(
   cashControl: json['cash_control'] as bool?,
   receiptHeader: _extractNullableString(json['receipt_header']),
   receiptFooter: _extractNullableString(json['receipt_footer']),
+  receiptPrinterType: $enumDecodeNullable(
+    _$ReceiptPrinterTypeEnumMap,
+    json['receipt_printer_type'],
+  ),
+  isOrderPrinter: json['is_order_printer'] as bool?,
+  printerMethod: $enumDecodeNullable(
+    _$PrinterMethodEnumMap,
+    json['printer_method'],
+  ),
   proxyIp: _extractNullableString(json['proxy_ip']),
   otherDevices: _extractNullableString(json['other_devices']),
+  epsonPrinterIp: _extractNullableString(json['epson_printer_ip']),
   paymentMethodIds: (json['payment_method_ids'] as List<dynamic>?)
       ?.map((e) => (e as num).toInt())
       .toList(),
@@ -82,10 +92,26 @@ Map<String, dynamic> _$POSConfigToJson(POSConfig instance) => <String, dynamic>{
   'cash_control': instance.cashControl,
   'receipt_header': instance.receiptHeader,
   'receipt_footer': instance.receiptFooter,
+  'receipt_printer_type':
+      _$ReceiptPrinterTypeEnumMap[instance.receiptPrinterType],
+  'is_order_printer': instance.isOrderPrinter,
+  'printer_method': _$PrinterMethodEnumMap[instance.printerMethod],
   'proxy_ip': instance.proxyIp,
   'other_devices': instance.otherDevices,
+  'epson_printer_ip': instance.epsonPrinterIp,
   'payment_method_ids': instance.paymentMethodIds,
   'available_pricelist_ids': instance.availablePricelistIds,
   'printer_ids': instance.printerIds,
   'iface_available_categ_ids': instance.ifaceAvailableCategIds,
+};
+
+const _$ReceiptPrinterTypeEnumMap = {
+  ReceiptPrinterType.epson: 'epson',
+  ReceiptPrinterType.star: 'star',
+  ReceiptPrinterType.custom: 'custom',
+};
+
+const _$PrinterMethodEnumMap = {
+  PrinterMethod.posbox: 'posbox',
+  PrinterMethod.network: 'network',
 };

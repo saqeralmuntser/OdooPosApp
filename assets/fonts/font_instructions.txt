@@ -1,0 +1,26 @@
+Arabic Font Installation Instructions
+=====================================
+
+To enable Arabic text support in PDF printing, please download and place the following font files in this directory:
+
+Required Font Files:
+1. NotoSansArabic-Regular.ttf
+2. NotoSansArabic-Bold.ttf  
+3. Roboto-Regular.ttf (for English text)
+4. Roboto-Bold.ttf (for English text)
+
+Download Sources:
+- Noto Sans Arabic: https://fonts.google.com/noto/specimen/Noto+Sans+Arabic
+- Roboto: 
+
+Alternative Fonts:
+- You can use any other Arabic fonts by updating the font family name in pubspec.yaml
+- Recommended: Cairo, Amiri, Tajawal fonts
+
+Steps:
+1. Download the font files
+2. Place them in this assets/fonts/ directory
+3. Run: flutter pub get
+4. Restart the application
+
+The system will automatically detect and use these fonts for Arabic text in PDF printing.
