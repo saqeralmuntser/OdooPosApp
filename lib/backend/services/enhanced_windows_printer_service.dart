@@ -741,7 +741,7 @@ class EnhancedWindowsPrinterService {
     return results;
   }
 
-  /// إنشاء PDF للإيصال مع إعدادات Odoo - تصميم محدث يطابق receipt_screen.dart
+    /// إنشاء PDF للإيصال مع تصميم مبسط يطابق receipt_screen.dart
   Future<Uint8List> _generateReceiptPDF({
     POSOrder? order,
     required List<POSOrderLine> orderLines,
@@ -765,7 +765,7 @@ class EnhancedWindowsPrinterService {
     // معلومات الشركة
     final companyInfo = _getCompanyInfo(company);
     
-    // QR Code data (ZATCA compliant for Saudi Arabia)
+    // QR Code data
     final qrData = _generateQRData(order, company, totalAmount, taxAmount, orderNumber);
 
     pdf.addPage(
@@ -776,29 +776,31 @@ class EnhancedWindowsPrinterService {
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.center,
             children: [
-              // Company Logo/Name Section - طابق receipt_screen.dart
+              // Company Logo/Name Section - بسيط مثل receipt_screen.dart
               pw.Container(
                 height: 80,
                 child: pw.Column(
                   children: [
-                    // Company name with orange accent bar (same as receipt_screen.dart)
                     pw.Container(
                       padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       child: pw.Column(
                         children: [
-                          // Main company name in bold
+                          // اسم الشركة
                           _fontService.createCenteredText(
                             companyInfo['name']!.toUpperCase(),
                             fontSize: 16,
                             isBold: true,
                             color: PdfColors.black,
                           ),
-                          // Orange accent bar (simulated with dark grey for PDF)
+                          // الشريط البرتقالي
                           pw.Container(
                             margin: const pw.EdgeInsets.only(top: 2),
                             width: 60,
                             height: 3,
-                            color: PdfColors.grey800,
+                            decoration: pw.BoxDecoration(
+                              color: PdfColors.grey800,
+                              borderRadius: pw.BorderRadius.circular(2),
+                            ),
                           ),
                         ],
                       ),
@@ -808,7 +810,7 @@ class EnhancedWindowsPrinterService {
               ),
               pw.SizedBox(height: 20),
 
-              // QR Code - same position as receipt_screen.dart
+              // QR Code - مثل receipt_screen.dart
               pw.Container(
                 width: 100,
                 height: 100,
@@ -821,122 +823,102 @@ class EnhancedWindowsPrinterService {
               ),
               pw.SizedBox(height: 20),
               
-              // Company Information - same layout as receipt_screen.dart
-              pw.Column(
-                children: [
-                  _fontService.createCenteredText(
-                    companyInfo['name']!,
-                    fontSize: 14,
-                    isBold: true,
-                    color: PdfColors.black,
+              // معلومات الشركة - مبسطة
+              _fontService.createCenteredText(
+                companyInfo['name']!,
+                fontSize: 14,
+                isBold: true,
+                color: PdfColors.black,
+              ),
+              pw.SizedBox(height: 4),
+              _fontService.createCenteredText(
+                companyInfo['phone']!,
+                fontSize: 10,
+                color: PdfColors.grey600,
+              ),
+              pw.SizedBox(height: 2),
+              _fontService.createCenteredText(
+                'VAT: ${companyInfo['vat']!.replaceAll('ض.ب: ', '')}',
+                fontSize: 10,
+                color: PdfColors.grey600,
+              ),
+              pw.SizedBox(height: 2),
+              _fontService.createCenteredText(
+                companyInfo['email']!,
+                fontSize: 10,
+                color: PdfColors.grey600,
+              ),
+
+              // معلومات العميل (إذا وجد)
+              if (customer != null) ...[
+                pw.SizedBox(height: 8),
+                pw.Container(
+                  width: double.infinity,
+                  padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.grey100,
+                    borderRadius: pw.BorderRadius.circular(4),
                   ),
-                  pw.SizedBox(height: 4),
-                  _fontService.createCenteredText(
-                    companyInfo['phone']!,
-                    fontSize: 10,
-                    color: PdfColors.grey700,
-                  ),
-                  pw.SizedBox(height: 2),
-                  _fontService.createCenteredText(
-                    'VAT: ${companyInfo['vat']!.replaceAll('ض.ب: ', '')}',
-                    fontSize: 10,
-                    color: PdfColors.grey700,
-                  ),
-                  pw.SizedBox(height: 2),
-                  _fontService.createCenteredText(
-                    companyInfo['email']!,
-                    fontSize: 10,
-                    color: PdfColors.grey700,
-                  ),
-                  
-                  // Customer Information (if exists) - same design as receipt_screen.dart
-                  if (customer != null) ...[
-                    pw.SizedBox(height: 8),
-                    pw.Container(
-                      width: double.infinity,
-                      padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-                      decoration: pw.BoxDecoration(
-                        color: PdfColors.grey100,
-                        borderRadius: pw.BorderRadius.circular(4),
+                  child: pw.Column(
+                    children: [
+                      _fontService.createCenteredText(
+                        'العميل: ${customer.name}',
+                        fontSize: 11,
+                        isBold: true,
+                        color: PdfColors.black,
                       ),
-                      child: pw.Column(
-                        children: [
-                          _fontService.createCenteredText(
-                            'العميل: ${customer.name}',
-                            fontSize: 11,
-                            isBold: true,
-                            color: PdfColors.black,
-                          ),
-                          if (customer.phone != null || customer.mobile != null) ...[
-                            pw.SizedBox(height: 2),
-                            _fontService.createCenteredText(
-                              'هاتف: ${customer.phone ?? customer.mobile}',
-                              fontSize: 9,
-                              color: PdfColors.grey,
-                            ),
-                          ],
-                          if (customer.vatNumber != null && customer.vatNumber!.isNotEmpty) ...[
-                            pw.SizedBox(height: 2),
-                            _fontService.createCenteredText(
-                              'ض.ب: ${customer.vatNumber}',
-                              fontSize: 9,
-                              color: PdfColors.grey,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                  
-                  pw.SizedBox(height: 6),
-                  _fontService.createCenteredText(
-                    'خدمكم الإداري - Served by Administrator',
-                    fontSize: 9,
-                    color: PdfColors.grey,
+                      if (customer.phone != null || customer.mobile != null) ...[
+                        pw.SizedBox(height: 2),
+                        _fontService.createCenteredText(
+                          'هاتف: ${customer.phone ?? customer.mobile}',
+                          fontSize: 9,
+                          color: PdfColors.grey,
+                        ),
+                      ],
+                    ],
                   ),
-                ],
+                ),
+              ],
+              
+              pw.SizedBox(height: 6),
+              _fontService.createCenteredText(
+                'Served by Administrator',
+                fontSize: 9,
+                color: PdfColors.grey,
               ),
               pw.SizedBox(height: 30),
 
-              // Order Number - same big display as receipt_screen.dart
-              pw.Column(
-                children: [
-                  _fontService.createCenteredText(
-                    orderNumber,
-                    fontSize: 32,
-                    isBold: true,
-                    color: PdfColors.black,
-                  ),
-                  pw.SizedBox(height: 4),
-                  _fontService.createCenteredText(
-                    orderId,
-                    fontSize: 10,
-                    color: PdfColors.grey,
-                  ),
-                ],
+              // رقم الطلب - مثل receipt_screen.dart
+              _fontService.createCenteredText(
+                orderNumber,
+                fontSize: 32,
+                isBold: true,
+                color: PdfColors.black,
+              ),
+              pw.SizedBox(height: 4),
+              _fontService.createCenteredText(
+                orderId,
+                fontSize: 10,
+                color: PdfColors.grey,
               ),
               pw.SizedBox(height: 20),
-              
-              // Receipt title - same as receipt_screen.dart
-              pw.Column(
-                children: [
-                  _fontService.createCenteredText(
-                    'Simplified Tax Invoice',
-                    fontSize: 12,
-                    isBold: true,
-                    color: PdfColors.black,
-                  ),
-                  pw.SizedBox(height: 2),
-                  _fontService.createCenteredText(
-                    'فاتورة ضريبية مبسطة',
-                    fontSize: 11,
-                    color: PdfColors.grey,
-                  ),
-                ],
+
+              // عنوان الفاتورة
+              _fontService.createCenteredText(
+                'Simplified Tax Invoice',
+                fontSize: 12,
+                isBold: true,
+                color: PdfColors.black,
+              ),
+              pw.SizedBox(height: 2),
+              _fontService.createCenteredText(
+                'فاتورة ضريبية مبسطة',
+                fontSize: 11,
+                color: PdfColors.grey,
               ),
               pw.SizedBox(height: 30),
-              
-              // Order date and time
+
+              // التاريخ
               _fontService.createCenteredText(
                 '${orderDate.day.toString().padLeft(2, '0')}/${orderDate.month.toString().padLeft(2, '0')}/${orderDate.year} ${orderDate.hour.toString().padLeft(2, '0')}:${orderDate.minute.toString().padLeft(2, '0')}',
                 fontSize: 10,
@@ -944,51 +926,47 @@ class EnhancedWindowsPrinterService {
               ),
               pw.SizedBox(height: 30),
 
-              // Items section - same layout as receipt_screen.dart
+              // العناصر - تصميم بسيط مثل receipt_screen.dart
               pw.Container(
                 width: double.infinity,
                 child: pw.Column(
                   children: [
-                    // Items list
-                    for (var item in orderLines)
+                    // قائمة العناصر بدون رؤوس
+                    for (int index = 0; index < orderLines.length; index++)
                       pw.Container(
                         padding: const pw.EdgeInsets.symmetric(vertical: 2),
                         child: pw.Column(
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
                           children: [
-                            // Product name and attributes
-                            pw.Column(
-                              crossAxisAlignment: pw.CrossAxisAlignment.start,
-                              children: [
-                                _fontService.createText(
-                                  item.fullProductName ?? 'منتج غير معروف',
-                                  fontSize: 11,
-                                  color: PdfColors.black,
-                                ),
-                                // Show attributes if available
-                                if (item.attributeNames != null && item.attributeNames!.isNotEmpty)
-                                  pw.Padding(
-                                    padding: const pw.EdgeInsets.only(top: 1),
-                                    child: _fontService.createText(
-                                      '(${item.attributeNames!.join(', ')})',
-                                      fontSize: 9,
-                                      color: PdfColors.grey,
-                                    ),
-                                  ),
-                              ],
+                            // اسم المنتج
+                            _fontService.createText(
+                              orderLines[index].fullProductName ?? 'Unknown Product',
+                              fontSize: 11,
+                              isBold: true,
+                              color: PdfColors.black,
                             ),
+                            // الخصائص إذا وجدت
+                            if (orderLines[index].attributeNames != null && orderLines[index].attributeNames!.isNotEmpty)
+                              pw.Padding(
+                                padding: const pw.EdgeInsets.only(top: 1),
+                                child: _fontService.createText(
+                                  '(${orderLines[index].attributeNames!.join(', ')})',
+                                  fontSize: 9,
+                                  color: PdfColors.grey,
+                                ),
+                              ),
                             pw.SizedBox(height: 2),
-                            // Quantity, price and total
+                            // الكمية والسعر والإجمالي
                             pw.Row(
                               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                               children: [
                                 _fontService.createText(
-                                  '${item.qty.toStringAsFixed(0)} x ${item.priceUnit.toStringAsFixed(2)} ر.س',
+                                  '${orderLines[index].qty.toStringAsFixed(0)} x ${orderLines[index].priceUnit.toStringAsFixed(2)} SR',
                                   fontSize: 10,
-                                  color: PdfColors.grey700,
+                                  color: PdfColors.grey600,
                                 ),
                                 _fontService.createText(
-                                  '${item.priceSubtotalIncl.toStringAsFixed(2)} ر.س',
+                                  '${orderLines[index].priceSubtotalIncl.toStringAsFixed(2)} SR',
                                   fontSize: 11,
                                   isBold: true,
                                   color: PdfColors.black,
@@ -1001,111 +979,143 @@ class EnhancedWindowsPrinterService {
 
                     pw.SizedBox(height: 20),
 
-                    // Summary section - dotted lines like receipt_screen.dart
-                    pw.Column(
+                    // خط منقط
+                    pw.Container(
+                      width: double.infinity,
+                      height: 1,
+                      margin: const pw.EdgeInsets.symmetric(vertical: 10),
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border(
+                          bottom: pw.BorderSide(
+                            color: PdfColors.grey,
+                            width: 1,
+                            style: pw.BorderStyle.dotted,
+                          ),
+                        ),
+                      ),
+                    ),
+                    
+                    // المبلغ قبل الضريبة
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
-                        // Dotted separator
-                        _buildDottedLine(),
-                        
-                        pw.Row(
-                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                          children: [
-                            _fontService.createText(
-                              'المبلغ قبل الضريبة - Untaxed Amount',
-                              fontSize: 14,
-                            ),
-                            _fontService.createText(
-                              '${subtotalAmount.toStringAsFixed(2)} ر.س',
-                              fontSize: 14,
-                            ),
-                          ],
+                        _fontService.createText(
+                          'Untaxed Amount',
+                          fontSize: 14,
+                          color: PdfColors.black,
                         ),
-                        pw.SizedBox(height: 4),
-                        pw.Row(
-                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                          children: [
-                            _fontService.createText(
-                              'ضريبة القيمة المضافة - VAT',
-                              fontSize: 14,
-                            ),
-                            _fontService.createText(
-                              '${taxAmount.toStringAsFixed(2)} ر.س',
-                              fontSize: 14,
-                            ),
-                          ],
-                        ),
-                        
-                        // Another dotted separator
-                        _buildDottedLine(),
-                        
-                        pw.Row(
-                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                          children: [
-                            _fontService.createText(
-                              'الإجمالي - TOTAL',
-                              fontSize: 16,
-                              isBold: true,
-                            ),
-                            _fontService.createText(
-                              '${totalAmount.toStringAsFixed(2)} ر.س',
-                              fontSize: 16,
-                              isBold: true,
-                            ),
-                          ],
+                        _fontService.createText(
+                          '${subtotalAmount.toStringAsFixed(2)} SR',
+                          fontSize: 14,
+                          color: PdfColors.black,
                         ),
                       ],
                     ),
-                    pw.SizedBox(height: 16),
-
-                    // Payment methods section - same design as receipt_screen.dart
-                    if (payments.isNotEmpty) ...[
-                      pw.Container(
-                        width: double.infinity,
-                        padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                        decoration: pw.BoxDecoration(
-                          color: PdfColors.green50,
-                          borderRadius: pw.BorderRadius.circular(6),
-                          border: pw.Border.all(color: PdfColors.green200),
+                    pw.SizedBox(height: 4),
+                    
+                    // ضريبة القيمة المضافة
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        _fontService.createText(
+                          'VAT Taxes',
+                          fontSize: 14,
+                          color: PdfColors.black,
                         ),
-                        child: pw.Column(
-                          children: [
-                            _fontService.createCenteredText(
-                              '✅ تم الدفع بنجاح - Payment Successful',
-                              fontSize: 11,
-                              isBold: true,
-                              color: PdfColors.green700,
-                            ),
-                            pw.SizedBox(height: 6),
-                            for (var entry in payments.entries)
-                              pw.Row(
-                                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                                children: [
-                                  _fontService.createText(
-                                    entry.key,
-                                    fontSize: 10,
-                                    color: PdfColors.grey,
-                                  ),
-                                  _fontService.createText(
-                                    '${entry.value.toStringAsFixed(2)} ر.س',
-                                    fontSize: 10,
-                                    isBold: true,
-                                    color: PdfColors.black,
-                                  ),
-                                ],
-                              ),
-                          ],
+                        _fontService.createText(
+                          '${taxAmount.toStringAsFixed(2)} SR',
+                          fontSize: 14,
+                          color: PdfColors.black,
+                        ),
+                      ],
+                    ),
+                    
+                    // خط منقط آخر
+                    pw.Container(
+                      width: double.infinity,
+                      height: 1,
+                      margin: const pw.EdgeInsets.symmetric(vertical: 10),
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border(
+                          bottom: pw.BorderSide(
+                            color: PdfColors.grey,
+                            width: 1,
+                            style: pw.BorderStyle.dotted,
+                          ),
                         ),
                       ),
-                      pw.SizedBox(height: 16),
-                    ],
+                    ),
+                    
+                    // الإجمالي
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        _fontService.createText(
+                          'TOTAL / الإجمالي',
+                          fontSize: 16,
+                          isBold: true,
+                          color: PdfColors.black,
+                        ),
+                        _fontService.createText(
+                          '${totalAmount.toStringAsFixed(2)} SR',
+                          fontSize: 16,
+                          isBold: true,
+                          color: PdfColors.black,
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
+              pw.SizedBox(height: 16),
+
+              // طرق الدفع - مبسطة
+              if (payments.isNotEmpty) ...[
+                pw.Container(
+                  width: double.infinity,
+                  padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.green50,
+                    borderRadius: pw.BorderRadius.circular(6),
+                    border: pw.Border.all(color: PdfColors.green200),
+                  ),
+                  child: pw.Column(
+                    children: [
+                      _fontService.createCenteredText(
+                        '✅ تم الدفع بنجاح',
+                        fontSize: 11,
+                        isBold: true,
+                        color: PdfColors.green700,
+                      ),
+                      pw.SizedBox(height: 6),
+                      for (var entry in payments.entries)
+                        pw.Row(
+                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                          children: [
+                            _fontService.createText(
+                              entry.key,
+                              fontSize: 10,
+                              color: PdfColors.grey,
+                            ),
+                            _fontService.createText(
+                              '${entry.value.toStringAsFixed(2)} SR',
+                              fontSize: 10,
+                              isBold: true,
+                              color: PdfColors.black,
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(height: 16),
+              ],
+
               pw.SizedBox(height: 20),
               
-              // Simple footer
+              // Footer بسيط
               _fontService.createCenteredText(
-                'مدعوم بـ Odoo - Powered by Odoo',
+                'Powered by Odoo',
                 fontSize: 9,
                 color: PdfColors.grey,
               ),
@@ -1118,42 +1128,39 @@ class EnhancedWindowsPrinterService {
     return pdf.save();
   }
 
-  /// إنشاء خط منقط للـ PDF
-  pw.Widget _buildDottedLine() {
-    return pw.Container(
-      width: double.infinity,
-      height: 1,
-      margin: const pw.EdgeInsets.symmetric(vertical: 10),
-      child: pw.Row(
-        children: List.generate(
-          20, // عدد النقاط
-          (index) => pw.Expanded(
-            child: pw.Container(
-              height: 1,
-              color: index % 2 == 0 ? PdfColors.grey : PdfColors.white,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+
 
   /// الحصول على رقم الطلب المختصر
   String _getOrderNumber(POSOrder? order) {
     if (order?.name != null) {
-      // استخراج رقم التسلسل من اسم الطلب (مثل 'POS/2023/001' -> '001')
       final orderName = order!.name;
-      final parts = orderName.split('/');
-      if (parts.length >= 3) {
-        return parts.last; // الحصول على الجزء الأخير (رقم التسلسل)
+      
+      // إذا كان الاسم يحتوي على '/' - مثل 'POS/2023/001'
+      if (orderName.contains('/')) {
+        final parts = orderName.split('/');
+        if (parts.length >= 2) {
+          // الحصول على آخر جزء وتحسينه
+          final lastPart = parts.last;
+          // إذا كان رقماً، اجعله 3 أرقام على الأقل
+          if (RegExp(r'^\d+$').hasMatch(lastPart)) {
+            return lastPart.padLeft(3, '0');
+          }
+          return lastPart;
+        }
       }
-      // إذا كان التنسيق مختلف، استخدم آخر 3 أحرف
-      return orderName.length >= 3 ? orderName.substring(orderName.length - 3) : orderName;
+      
+      // إذا كان الاسم رقماً فقط
+      if (RegExp(r'^\d+$').hasMatch(orderName)) {
+        return orderName.padLeft(3, '0');
+      }
+      
+      // إذا كان نص عادي، استخدم آخر 6 أحرف
+      return orderName.length >= 6 ? orderName.substring(orderName.length - 6) : orderName;
     }
     
-    // Fallback - إنتاج رقم بسيط
+    // Fallback - رقم بناءً على الوقت
     final now = DateTime.now();
-    return (now.millisecondsSinceEpoch % 1000).toString().padLeft(3, '0');
+    return (now.hour * 100 + now.minute).toString().padLeft(4, '0');
   }
 
   /// الحصول على معلومات الشركة
