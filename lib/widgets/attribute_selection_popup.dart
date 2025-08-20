@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../backend/models/product_product.dart';
 import '../backend/models/product_attribute.dart';
 import '../backend/providers/product_attribute_provider.dart';
+import '../backend/providers/enhanced_pos_provider.dart';
 import '../theme/app_theme.dart';
 
 class AttributeSelectionPopup extends StatefulWidget {
@@ -65,7 +66,8 @@ class _AttributeSelectionPopupState extends State<AttributeSelectionPopup> {
 
         final productInfo = attributeProvider.currentProductInfo;
         if (productInfo == null) {
-          return _buildErrorDialog(context, 'Unable to load product information');
+          // If not loading and no error but no data, show loading (data might still be processing)
+          return _buildLoadingDialog(context);
         }
 
         final totalPrice = attributeProvider.totalPrice * _quantity;
@@ -192,14 +194,101 @@ class _AttributeSelectionPopupState extends State<AttributeSelectionPopup> {
                   ),
                 ),
 
-                // Bottom buttons
+                // Price summary section
                 Container(
                   padding: const EdgeInsets.all(24),
                   decoration: const BoxDecoration(
+                    color: Color(0xFFF8F9FA),
                     border: Border(
                       top: BorderSide(color: AppTheme.borderColor),
+                      bottom: BorderSide(color: AppTheme.borderColor),
                     ),
                   ),
+                  child: Consumer<ProductAttributeProvider>(
+                    builder: (context, attrProvider, _) {
+                      final currencyFormat = NumberFormat.currency(symbol: 'ر.س ');
+                      
+                      // Get base price from pricelist (without attributes)
+                      final basePrice = Provider.of<EnhancedPOSProvider>(context, listen: false)
+                          .getProductPrice(widget.product, quantity: _quantity);
+                      
+                      // Get extra prices from selected attributes
+                      final extraPrices = <double>[];
+                      if (attrProvider.currentProductInfo != null) {
+                        for (final group in attrProvider.currentProductInfo!.attributeGroups) {
+                          final selectedValue = attrProvider.getSelectedValue(group.attributeId);
+                          if (selectedValue != null) {
+                            extraPrices.add(selectedValue.priceExtra);
+                          }
+                        }
+                      }
+                      
+                      final totalExtra = extraPrices.fold(0.0, (sum, price) => sum + price);
+                      final finalPrice = basePrice + totalExtra;
+                      
+                      return Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'السعر الأساسي:',
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                              Text(
+                                currencyFormat.format(basePrice),
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            ],
+                          ),
+                          if (totalExtra > 0) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'إضافات الخصائص:',
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                                Text(
+                                  '+ ${currencyFormat.format(totalExtra)}',
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Colors.orange,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const Divider(height: 16),
+                          ],
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'السعر النهائي:',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                currencyFormat.format(finalPrice),
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.primaryColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+
+                // Bottom buttons
+                Container(
+                  padding: const EdgeInsets.all(24),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
@@ -240,9 +329,6 @@ class _AttributeSelectionPopupState extends State<AttributeSelectionPopup> {
                                       }
                                     }
                                   }
-                                  
-                                  print('Selected attribute names: $selectedAttributeNames');
-                                  print('Selected attribute extra prices: $selectedAttributeExtraPrices');
                                   
                                   // Pop the dialog first
                                   Navigator.of(context).pop();

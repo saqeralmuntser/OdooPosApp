@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../backend/providers/enhanced_pos_provider.dart';
 import '../backend/models/product_product.dart';
+import '../backend/models/res_partner.dart';
 import '../theme/app_theme.dart';
 import '../widgets/numpad_widget.dart';
 import '../widgets/actions_menu_dialog.dart';
@@ -88,6 +89,16 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
     );
   }
 
+  /// Handle customer selection
+  void _selectCustomer(BuildContext context) async {
+    final result = await Navigator.of(context).pushNamed('/customers');
+    if (result != null && result is ResPartner) {
+      // Handle the selected customer
+      final posProvider = Provider.of<EnhancedPOSProvider>(context, listen: false);
+      posProvider.selectCustomer(result);
+    }
+  }
+
   /// Handle adding product with attributes in a safer way
   void _handleAttributeProductAdd(ProductProduct product, double quantity, List<int> selectedAttributeValueIds, {List<String>? selectedAttributeNames, List<double>? selectedAttributeExtraPrices}) async {
     // Get the current provider in a safe way
@@ -111,17 +122,27 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
         final orderResult = await posProvider.backendService.orderManager.createOrder(
           session: session,
           pricelistId: pricelistId,
+          partnerId: posProvider.selectedCustomer?.id,
         );
         if (!orderResult.success) {
           throw Exception(orderResult.error ?? 'Failed to create order');
         }
       }
       
+      // Calculate the correct price using current pricelist + extra prices from attributes
+      final correctPrice = posProvider.getProductPrice(
+        product, 
+        quantity: quantity, 
+        extraPrices: selectedAttributeExtraPrices,
+      );
+      
       // Add the product with attributes to the order
-      // Note: Custom attributes are stored in the order line but passed through the product name
       final result = await posProvider.backendService.orderManager.addProductToOrder(
         product: product,
         quantity: quantity,
+        customPrice: correctPrice,
+        attributeNames: selectedAttributeNames,
+        attributeExtraPrices: selectedAttributeExtraPrices,
       );
       
       if (!result.success) {
@@ -179,6 +200,7 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
         final orderResult = await posProvider.backendService.orderManager.createOrder(
           session: session,
           pricelistId: pricelistId,
+          partnerId: posProvider.selectedCustomer?.id,
         );
         if (!orderResult.success) {
           throw Exception(orderResult.error ?? 'Failed to create order');
@@ -425,22 +447,106 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                   child: OrderSummary(),
                 ),
 
+                // Selected Customer Display
+                Consumer<EnhancedPOSProvider>(
+                  builder: (context, posProvider, _) {
+                    final selectedCustomer = posProvider.selectedCustomer;
+                    return Container(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Customer display
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: selectedCustomer != null 
+                                  ? AppTheme.primaryColor.withOpacity(0.1)
+                                  : Colors.grey.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: selectedCustomer != null 
+                                    ? AppTheme.primaryColor.withOpacity(0.3)
+                                    : Colors.grey.withOpacity(0.3),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 16,
+                                  backgroundColor: selectedCustomer != null 
+                                      ? AppTheme.primaryColor
+                                      : Colors.grey,
+                                  child: Icon(
+                                    Icons.person,
+                                    size: 18,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        selectedCustomer?.name ?? 'لم يتم اختيار عميل',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                          color: selectedCustomer != null 
+                                              ? AppTheme.primaryColor
+                                              : Colors.grey[600],
+                                        ),
+                                      ),
+                                      if (selectedCustomer?.phone != null) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          selectedCustomer!.phone!,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                if (selectedCustomer != null)
+                                  IconButton(
+                                    onPressed: () {
+                                      posProvider.clearSelectedCustomer();
+                                    },
+                                    icon: Icon(
+                                      Icons.close,
+                                      size: 18,
+                                      color: Colors.grey[600],
+                                    ),
+                                    tooltip: 'إلغاء اختيار العميل',
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+
                 // Customer and Actions buttons
                 Container(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                   child: Row(
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
-                          onPressed: () {
-                            Navigator.of(context).pushNamed('/customers');
-                          },
+                          onPressed: () => _selectCustomer(context),
                           icon: const Icon(
-                            Icons.person_outline,
+                            Icons.person_search,
                             size: 18,
                           ),
                           label: const Text(
-                            'العميل',
+                            'اختيار العميل',
                             style: TextStyle(fontSize: 14),
                           ),
                           style: OutlinedButton.styleFrom(
@@ -664,12 +770,41 @@ class ProductCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   
                   // Product price
-                  Text(
-                    currencyFormat.format(product.lstPrice),
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: AppTheme.primaryColor,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Consumer<EnhancedPOSProvider>(
+                    builder: (context, posProvider, _) {
+                      final effectivePrice = posProvider.getProductPrice(product);
+                      final hasDiscount = effectivePrice < product.lstPrice;
+                      final hasIncrease = effectivePrice > product.lstPrice;
+                      
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (hasDiscount) ...[
+                            // Original price (crossed out) - only show for discounts
+                            Text(
+                              currencyFormat.format(product.lstPrice),
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.grey,
+                                decoration: TextDecoration.lineThrough,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                          ],
+                          // Effective price
+                          Text(
+                            currencyFormat.format(effectivePrice),
+                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              color: hasDiscount 
+                                  ? Colors.green 
+                                  : hasIncrease 
+                                      ? Colors.orange 
+                                      : AppTheme.primaryColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),
@@ -845,14 +980,26 @@ class OrderItemCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Product name
+                  // Product name with attributes
                   Text(
-                    orderLine.fullProductName ?? 'منتج غير محدد',
+                    orderLine.displayNameWithAttributes,
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
                       fontSize: 14,
                     ),
                   ),
+                  // Show attributes separately if they exist
+                  if (orderLine.hasCustomAttributes) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      orderLine.attributesDisplay,
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 4),
                   Text(
                     '${currencyFormat.format(orderLine.priceUnit ?? 0)} / وحدة',

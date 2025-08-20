@@ -45,7 +45,10 @@ Map<String, dynamic> _$AccountTaxToJson(AccountTax instance) =>
       'is_base_affected': instance.isBaseAffected,
       'sequence': instance.sequence,
       'company_id': const OdooMany2OneConverter().toJson(instance.companyId),
-      'tax_group_id': instance.taxGroupId == null ? null : const OdooMany2OneConverter().toJson(instance.taxGroupId!),
+      'tax_group_id': _$JsonConverterToJson<dynamic, int>(
+        instance.taxGroupId,
+        const OdooMany2OneConverter().toJson,
+      ),
       'children_tax_ids': const OdooMany2ManyConverter().toJson(
         instance.childrenTaxIds,
       ),
@@ -70,4 +73,7 @@ const _$TaxTypeUseEnumMap = {
   TaxTypeUse.none: 'none',
 };
 
-
+Json? _$JsonConverterToJson<Json, Value>(
+  Value? value,
+  Json? Function(Value value) toJson,
+) => value == null ? null : toJson(value);

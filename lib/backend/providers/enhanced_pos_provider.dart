@@ -14,6 +14,9 @@ import '../models/pos_order.dart';
 import '../models/pos_order_line.dart';
 import '../models/pos_payment.dart';
 import '../models/pos_payment_method.dart';
+import '../models/product_pricelist.dart';
+import '../models/product_pricelist_item.dart';
+import '../services/pricing_service.dart';
 
 /// Enhanced POS Provider
 /// Integrates the existing Flutter UI with the new Odoo 18 backend
@@ -21,6 +24,7 @@ import '../models/pos_payment_method.dart';
 class EnhancedPOSProvider with ChangeNotifier {
   final POSBackendService _backendService = POSBackendService();
   final HybridAuthService _hybridAuth = HybridAuthService();
+  final PricingService _pricingService = PricingService();
 
   // Connection and authentication state
   bool _isInitialized = false;
@@ -54,6 +58,11 @@ class EnhancedPOSProvider with ChangeNotifier {
 
   // Payment methods
   List<POSPaymentMethod> _paymentMethods = [];
+
+  // Pricelists
+  List<ProductPricelist> _availablePricelists = [];
+  ProductPricelist? _currentPricelist;
+  List<ProductPricelistItem> _pricelistItems = [];
 
   // Order state
   POSOrder? _currentOrder;
@@ -91,6 +100,11 @@ class EnhancedPOSProvider with ChangeNotifier {
 
   // Payment methods getters
   List<POSPaymentMethod> get paymentMethods => List.unmodifiable(_paymentMethods);
+
+  // Pricelist getters
+  List<ProductPricelist> get availablePricelists => List.unmodifiable(_availablePricelists);
+  ProductPricelist? get currentPricelist => _currentPricelist;
+  bool get hasPricelistFeature => _selectedConfig?.usePricelist == true;
 
   // Order getters
   POSOrder? get currentOrder => _currentOrder;
@@ -436,6 +450,9 @@ class EnhancedPOSProvider with ChangeNotifier {
       _customers = List.from(_backendService.customers);
       _paymentMethods = List.from(_backendService.paymentMethods);
       
+      // Update pricelists from backend service
+      _loadPricelists();
+      
       // Force a UI update
       notifyListeners();
       
@@ -648,6 +665,10 @@ class EnhancedPOSProvider with ChangeNotifier {
   /// Select POS configuration
   void selectConfig(POSConfig config) {
     _selectedConfig = config;
+    
+    // Load pricelists for this configuration
+    _loadPricelists();
+    
     _safeNotifyListeners();
   }
 
@@ -658,6 +679,9 @@ class EnhancedPOSProvider with ChangeNotifier {
     _orderLines.clear();
     _payments.clear();
     _paymentMethods.clear();
+    _availablePricelists.clear();
+    _currentPricelist = null;
+    _pricelistItems.clear();
     _safeNotifyListeners();
   }
 
@@ -687,13 +711,16 @@ class EnhancedPOSProvider with ChangeNotifier {
   /// Add product to current order
   Future<bool> addProductToCurrentOrder(ProductProduct product, double quantity) async {
     try {
+      // Calculate the correct price using current pricelist
+      final correctPrice = getProductPrice(product, quantity: quantity);
+      
       final result = await _backendService.orderManager.addProductToOrder(
         product: product,
         quantity: quantity,
+        customPrice: correctPrice,
       );
 
       if (result.success) {
-        print('Product added to order successfully: ${product.displayName}');
         return true;
       } else {
         print('Failed to add product to order: ${result.error}');
@@ -737,6 +764,162 @@ class EnhancedPOSProvider with ChangeNotifier {
       return _products;
     }
   }
+
+  /// ========================
+  /// PRICELIST MANAGEMENT
+  /// ========================
+
+  /// Select a pricelist for the current session
+  Future<void> selectPricelist(ProductPricelist pricelist) async {
+    try {
+      _currentPricelist = pricelist;
+      
+      // Recalculate all product prices with the new pricelist
+      await _recalculateProductPrices();
+      
+      // Recalculate current order if exists
+      if (_orderLines.isNotEmpty) {
+        await _recalculateOrderPrices();
+      }
+      
+      _safeNotifyListeners();
+    } catch (e) {
+      print('Error selecting pricelist: $e');
+    }
+  }
+
+  /// Get the price of a product according to the current pricelist
+  double getProductPrice(ProductProduct product, {double quantity = 1.0, List<double>? extraPrices}) {
+    if (_currentPricelist == null) {
+      final extraAmount = extraPrices?.fold(0.0, (sum, price) => sum + price) ?? 0.0;
+      return product.lstPrice + extraAmount;
+    }
+
+    try {
+      final basePrice = _pricingService.calculateProductPrice(
+        product: product,
+        pricelist: _currentPricelist!,
+        pricelistItems: _pricelistItems,
+        quantity: quantity,
+        categories: _categories,
+      );
+      
+      // Add extra prices from attributes
+      final attributeExtra = extraPrices?.fold(0.0, (sum, price) => sum + price) ?? 0.0;
+      return basePrice + attributeExtra;
+    } catch (e) {
+      print('Error calculating product price: $e');
+      final extraAmount = extraPrices?.fold(0.0, (sum, price) => sum + price) ?? 0.0;
+      return product.lstPrice + extraAmount;
+    }
+  }
+
+  /// Recalculate all product prices with current pricelist
+  Future<void> _recalculateProductPrices() async {
+    if (_currentPricelist == null) return;
+
+    try {
+      // Product prices are calculated on-demand in getProductPrice
+      // This method ensures UI refresh after pricelist change
+      _safeNotifyListeners();
+    } catch (e) {
+      print('Error recalculating product prices: $e');
+    }
+  }
+
+  /// Recalculate current order prices with new pricelist
+  Future<void> _recalculateOrderPrices() async {
+    if (_currentPricelist == null || _orderLines.isEmpty) {
+      return;
+    }
+
+    try {
+      // Update each order line with new prices
+      for (int i = 0; i < _orderLines.length; i++) {
+        final orderLine = _orderLines[i];
+        
+        // Find the product for this order line
+        final product = _products.firstWhere(
+          (p) => p.id == orderLine.productId,
+          orElse: () => throw StateError('Product not found for order line'),
+        );
+        
+        // Calculate new price
+        final newPrice = getProductPrice(product, quantity: orderLine.qty);
+        
+        // Update the order line with new price
+        await updateOrderLinePrice(i, newPrice);
+      }
+      
+      _safeNotifyListeners();
+    } catch (e) {
+      print('Error recalculating order prices: $e');
+    }
+  }
+
+  /// Update order line price (helper method)
+  Future<void> updateOrderLinePrice(int index, double newPrice) async {
+    try {
+      // This would typically call the backend to update the price
+      // For now, we'll update it locally
+      if (index >= 0 && index < _orderLines.length) {
+        final orderLine = _orderLines[index];
+        final newSubtotal = newPrice * orderLine.qty;
+        
+        // Create updated order line
+        final updatedOrderLine = POSOrderLine(
+          id: orderLine.id,
+          orderId: orderLine.orderId,
+          productId: orderLine.productId,
+          uuid: orderLine.uuid,
+          fullProductName: orderLine.fullProductName,
+          companyId: orderLine.companyId,
+          qty: orderLine.qty,
+          priceUnit: newPrice,
+          priceSubtotal: newSubtotal,
+          priceSubtotalIncl: newSubtotal * 1.15, // Assuming 15% tax
+          discount: orderLine.discount,
+          customerNote: orderLine.customerNote,
+          totalCost: orderLine.totalCost,
+          taxIds: orderLine.taxIds,
+        );
+        
+        _orderLines[index] = updatedOrderLine;
+      }
+    } catch (e) {
+      print('Error updating order line price: $e');
+    }
+  }
+
+  /// Load pricelists for current configuration
+  Future<void> _loadPricelists() async {
+    try {
+      if (_selectedConfig == null) return;
+
+      _availablePricelists = _backendService.getPricelistsForConfig(_selectedConfig!);
+      _pricelistItems = _backendService.pricelistItems;
+
+      // Set default pricelist
+      if (_availablePricelists.isNotEmpty) {
+        final defaultPricelist = _backendService.getDefaultPricelistForConfig(_selectedConfig!);
+        if (defaultPricelist != null) {
+          _currentPricelist = defaultPricelist;
+        } else {
+          _currentPricelist = _availablePricelists.first;
+        }
+      }
+
+      print('Loaded ${_availablePricelists.length} pricelists. Current: ${_currentPricelist?.name}');
+    } catch (e) {
+      print('Error loading pricelists: $e');
+      _availablePricelists = [];
+      _currentPricelist = null;
+    }
+  }
+
+  /// ========================
+  /// ORDER MANAGEMENT
+  /// ========================
 
   /// Remove order line by index
   Future<bool> removeOrderLine(int index) async {
@@ -1030,6 +1213,163 @@ class EnhancedPOSProvider with ChangeNotifier {
     
     // Join names with comma for display
     return ' (${names.join(', ')})';
+  }
+
+  /// ========================
+  /// CUSTOMER MANAGEMENT
+  /// ========================
+
+  /// Select customer for the current order
+  void selectCustomer(ResPartner customer) {
+    _selectedCustomer = customer;
+    print('Customer selected: ${customer.name}');
+    _safeNotifyListeners();
+  }
+
+  /// Clear selected customer
+  void clearSelectedCustomer() {
+    if (_selectedCustomer != null) {
+      print('Clearing selected customer: ${_selectedCustomer!.name}');
+      _selectedCustomer = null;
+      _safeNotifyListeners();
+    }
+  }
+
+  /// Add new customer
+  Future<bool> addCustomer(ResPartner customer) async {
+    try {
+      // Convert customer to Map for backend service
+      final customerData = {
+        'name': customer.name,
+        'is_company': customer.isCompany,
+        'customer_rank': customer.customerRank,
+        'email': customer.email,
+        'phone': customer.phone,
+        'mobile': customer.mobile,
+        'website': customer.website,
+        'vat': customer.vatNumber,
+        'function': customer.jobPosition,
+        'title': customer.title,
+        'street': customer.street,
+        'street2': customer.street2,
+        'city': customer.city,
+        'state_id': customer.state,
+        'zip': customer.zip,
+        'country_id': customer.countryId,
+        'lang': customer.lang,
+        'tz': customer.tz,
+        'active': customer.active,
+      };
+      
+      // Remove null values to avoid sending them to Odoo
+      customerData.removeWhere((key, value) => value == null);
+      
+      // Try to create customer in Odoo backend
+      final result = await _backendService.createCustomer(customerData);
+      
+      if (result.success && result.customer != null) {
+        // Add the customer with the server-assigned ID to local list
+        _customers.add(result.customer!);
+        print('Customer added successfully: ${result.customer!.name} (ID: ${result.customer!.id})');
+        _safeNotifyListeners();
+        return true;
+      } else {
+        print('Failed to create customer on server: ${result.error}');
+        
+        // Fallback: Add to local list with temporary negative ID for offline sync
+        final localCustomer = customer.copyWith(
+          id: -DateTime.now().millisecondsSinceEpoch, // Negative ID indicates pending sync
+        );
+        _customers.add(localCustomer);
+        print('Customer added locally for later sync: ${localCustomer.name}');
+        _safeNotifyListeners();
+        return true;
+      }
+    } catch (e) {
+      print('Error adding customer: $e');
+      
+      // Fallback: Add to local list for offline sync
+      try {
+        final localCustomer = customer.copyWith(
+          id: -DateTime.now().millisecondsSinceEpoch, // Negative ID indicates pending sync
+        );
+        _customers.add(localCustomer);
+        print('Customer added locally due to error: ${localCustomer.name}');
+        _safeNotifyListeners();
+        return true;
+      } catch (fallbackError) {
+        print('Complete failure adding customer: $fallbackError');
+        return false;
+      }
+    }
+  }
+
+  /// Update existing customer
+  Future<bool> updateCustomer(ResPartner customer) async {
+    try {
+      final index = _customers.indexWhere((c) => c.id == customer.id);
+      if (index == -1) {
+        print('Customer not found for update: ${customer.name}');
+        return false;
+      }
+      
+      // If customer has positive ID, try to update on server
+      if (customer.id > 0) {
+        // Convert customer to Map for backend service
+        final customerData = {
+          'name': customer.name,
+          'is_company': customer.isCompany,
+          'customer_rank': customer.customerRank,
+          'email': customer.email,
+          'phone': customer.phone,
+          'mobile': customer.mobile,
+          'website': customer.website,
+          'vat': customer.vatNumber,
+          'function': customer.jobPosition,
+          'title': customer.title,
+          'street': customer.street,
+          'street2': customer.street2,
+          'city': customer.city,
+          'state_id': customer.state,
+          'zip': customer.zip,
+          'country_id': customer.countryId,
+          'lang': customer.lang,
+          'tz': customer.tz,
+          'active': customer.active,
+        };
+        
+        // Remove null values
+        customerData.removeWhere((key, value) => value == null);
+        
+        try {
+          // Update customer on server via API
+          if (_backendService.apiClient.isConnected && _backendService.apiClient.isAuthenticated) {
+            await _backendService.apiClient.write('res.partner', customer.id, customerData);
+            print('Customer updated on server: ${customer.name}');
+          } else {
+            print('Not connected to server, customer will be synced later');
+          }
+        } catch (serverError) {
+          print('Failed to update customer on server: $serverError');
+          // Continue with local update for offline sync later
+        }
+      }
+      
+      // Update local customer
+      _customers[index] = customer;
+      
+      // Update selected customer if it's the same one
+      if (_selectedCustomer?.id == customer.id) {
+        _selectedCustomer = customer;
+      }
+      
+      print('Customer updated locally: ${customer.name}');
+      _safeNotifyListeners();
+      return true;
+    } catch (e) {
+      print('Error updating customer: $e');
+      return false;
+    }
   }
 
   void _safeNotifyListeners() {

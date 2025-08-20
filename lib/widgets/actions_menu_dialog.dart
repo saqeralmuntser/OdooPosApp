@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../backend/providers/enhanced_pos_provider.dart';
+import 'pricelist_selection_dialog.dart';
 
 class ActionsMenuDialog extends StatelessWidget {
   const ActionsMenuDialog({super.key});
@@ -86,6 +89,9 @@ class ActionsMenuDialog extends StatelessWidget {
       case 'Edit Order Name':
         _showOrderNameDialog(context);
         break;
+      case 'Pricelist':
+        _showPricelistDialog(context);
+        break;
       case 'Cancel Order':
         _showCancelOrderDialog(context);
         break;
@@ -96,6 +102,38 @@ class ActionsMenuDialog extends StatelessWidget {
           ),
         );
     }
+  }
+
+  void _showPricelistDialog(BuildContext context) {
+    final posProvider = Provider.of<EnhancedPOSProvider>(context, listen: false);
+    
+    // Check if pricelist feature is enabled for current config
+    if (!posProvider.hasPricelistFeature) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('خاصية التسعيرات غير مفعلة في البوس كونفج الحالي'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Check if there are available pricelists
+    if (posProvider.availablePricelists.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('لا توجد تسعيرات متاحة'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Show pricelist selection dialog
+    showDialog(
+      context: context,
+      builder: (context) => const PricelistSelectionDialog(),
+    );
   }
 
   void _showNoteDialog(BuildContext context, String title) {

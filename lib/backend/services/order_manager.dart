@@ -149,17 +149,19 @@ class OrderManager {
     double discount = 0.0,
     String? customerNote,
     List<int>? taxIds,
+    List<String>? attributeNames,
+    List<double>? attributeExtraPrices,
   }) async {
     if (_currentOrder == null) {
       return OrderLineResult(success: false, error: 'No active order');
     }
 
     try {
-      // Check if product already exists in order (simplified since attributes are not supported in Odoo 18)
+            // Check if product already exists in order with same attributes
       print('Adding product ${product.displayName}');
       
       final existingLineIndex = _currentOrderLines.indexWhere(
-        (line) => line.productId == product.id,
+        (line) => line.productId == product.id && _attributesMatch(line, attributeNames),
       );
       
       print('Existing line index: $existingLineIndex');
@@ -179,6 +181,8 @@ class OrderManager {
           discount: discount,
           customerNote: customerNote,
           taxIds: taxIds,
+          attributeNames: attributeNames,
+          attributeExtraPrices: attributeExtraPrices,
         );
         
         _currentOrderLines[existingLineIndex] = orderLine;
@@ -192,6 +196,8 @@ class OrderManager {
           discount: discount,
           customerNote: customerNote,
           taxIds: taxIds,
+          attributeNames: attributeNames,
+          attributeExtraPrices: attributeExtraPrices,
         );
         
         _currentOrderLines.add(orderLine);
@@ -215,6 +221,8 @@ class OrderManager {
     double discount = 0.0,
     String? customerNote,
     List<int>? taxIds,
+    List<String>? attributeNames,
+    List<double>? attributeExtraPrices,
   }) async {
     // Calculate base price (attribute extras not supported in Odoo 18)
     final priceUnit = customPrice ?? product.finalPrice;
@@ -242,7 +250,43 @@ class OrderManager {
       customerNote: customerNote,
       totalCost: product.standardPrice * quantity,
       taxIds: taxes.map((tax) => tax.id).toList(),
+      attributeNames: attributeNames,
+      attributeExtraPrices: attributeExtraPrices,
     );
+  }
+
+  /// Check if attributes match between order line and new attributes
+  bool _attributesMatch(POSOrderLine line, List<String>? newAttributes) {
+    final lineAttributes = line.attributeNames;
+    
+    // Both null or empty
+    if ((lineAttributes == null || lineAttributes.isEmpty) && 
+        (newAttributes == null || newAttributes.isEmpty)) {
+      return true;
+    }
+    
+    // One is null/empty, other is not
+    if ((lineAttributes == null || lineAttributes.isEmpty) != 
+        (newAttributes == null || newAttributes.isEmpty)) {
+      return false;
+    }
+    
+    // Both have values - compare
+    if (lineAttributes!.length != newAttributes!.length) {
+      return false;
+    }
+    
+    // Sort and compare
+    final sortedLine = List<String>.from(lineAttributes)..sort();
+    final sortedNew = List<String>.from(newAttributes)..sort();
+    
+    for (int i = 0; i < sortedLine.length; i++) {
+      if (sortedLine[i] != sortedNew[i]) {
+        return false;
+      }
+    }
+    
+    return true;
   }
 
   /// Update order line quantity
@@ -275,6 +319,8 @@ class OrderManager {
           discount: currentLine.discount,
           customerNote: currentLine.customerNote,
           taxIds: currentLine.taxIds,
+          attributeNames: currentLine.attributeNames,
+          attributeExtraPrices: currentLine.attributeExtraPrices,
         );
 
         _currentOrderLines[lineIndex] = updatedLine;

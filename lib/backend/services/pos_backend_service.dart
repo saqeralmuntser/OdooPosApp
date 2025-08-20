@@ -7,6 +7,8 @@ import '../models/res_partner.dart';
 import '../models/pos_payment_method.dart';
 import '../models/account_tax.dart';
 import '../models/product_attribute.dart';
+import '../models/product_pricelist.dart';
+import '../models/product_pricelist_item.dart';
 import '../api/odoo_api_client.dart';
 import '../storage/local_storage.dart';
 import 'session_manager.dart';
@@ -35,6 +37,8 @@ class POSBackendService {
   List<POSCategory> _categories = [];
   List<ResPartner> _customers = [];
   List<POSPaymentMethod> _paymentMethods = [];
+  List<ProductPricelist> _pricelists = [];
+  List<ProductPricelistItem> _pricelistItems = [];
   
   // Map to store product templates with their attribute lines
   Map<int, Map<String, dynamic>> _productTemplates = {};
@@ -45,6 +49,7 @@ class POSBackendService {
   final StreamController<List<ProductProduct>> _productsController = StreamController<List<ProductProduct>>.broadcast();
   final StreamController<List<POSCategory>> _categoriesController = StreamController<List<POSCategory>>.broadcast();
   final StreamController<List<ResPartner>> _customersController = StreamController<List<ResPartner>>.broadcast();
+  final StreamController<List<ProductPricelist>> _pricelistsController = StreamController<List<ProductPricelist>>.broadcast();
   final StreamController<bool> _loadingController = StreamController<bool>.broadcast();
   final StreamController<String> _statusController = StreamController<String>.broadcast();
 
@@ -52,6 +57,7 @@ class POSBackendService {
   Stream<List<ProductProduct>> get productsStream => _productsController.stream;
   Stream<List<POSCategory>> get categoriesStream => _categoriesController.stream;
   Stream<List<ResPartner>> get customersStream => _customersController.stream;
+  Stream<List<ProductPricelist>> get pricelistsStream => _pricelistsController.stream;
   Stream<bool> get loadingStream => _loadingController.stream;
   Stream<String> get statusStream => _statusController.stream;
 
@@ -67,6 +73,8 @@ class POSBackendService {
   List<POSCategory> get categories => List.unmodifiable(_categories);
   List<ResPartner> get customers => List.unmodifiable(_customers);
   List<POSPaymentMethod> get paymentMethods => List.unmodifiable(_paymentMethods);
+  List<ProductPricelist> get pricelists => List.unmodifiable(_pricelists);
+  List<ProductPricelistItem> get pricelistItems => List.unmodifiable(_pricelistItems);
   List<AccountTax> get taxes => List.unmodifiable(_taxes);
 
   /// Check if service is initialized
@@ -102,21 +110,48 @@ class POSBackendService {
       
       for (var line in attributeLines) {
         final attributeData = line['attribute_id'];
-        final valueIds = line['value_ids'] as List<dynamic>;
+        final rawTemplateValueIds = line['product_template_value_ids'];
         
-        // Load attribute values with price_extra from template attribute values
-        final attributeValues = await _loadTemplateAttributeValues(product.productTmplId, valueIds.cast<int>());
+        // Handle null or false values from Odoo
+        List<int> templateValueIds = [];
+        if (rawTemplateValueIds != null && rawTemplateValueIds != false && rawTemplateValueIds is List) {
+          templateValueIds = List<int>.from(rawTemplateValueIds);
+        }
+        
+        print('Raw template value IDs: $rawTemplateValueIds');
+        print('Processed template value IDs: $templateValueIds');
+        
+        // Load template attribute values with price_extra
+        List<ProductAttributeValue> attributeValues = [];
+        
+        if (templateValueIds.isNotEmpty) {
+          // Use the new method with product_template_value_ids
+          attributeValues = await _loadTemplateAttributeValuesByIds(templateValueIds);
+        } else {
+          // Fallback to the old method using value_ids
+          final rawValueIds = line['value_ids'];
+          if (rawValueIds != null && rawValueIds != false && rawValueIds is List) {
+            final valueIds = List<int>.from(rawValueIds);
+            print('Fallback to value_ids: $valueIds');
+            attributeValues = await _loadTemplateAttributeValues(product.productTmplId, valueIds);
+          }
+        }
         
         // Debug: Print attribute values with price_extra
         for (var value in attributeValues) {
           print('Backend attribute value: ${value.name}, price_extra: ${value.priceExtra}');
         }
         
-        attributeGroups.add({
-          'id': attributeData[0], // [id, name]
-          'name': attributeData[1],
-          'values': attributeValues.map((v) => v.toJson()).toList(),
-        });
+        // Only add the attribute group if it has values
+        if (attributeValues.isNotEmpty) {
+          attributeGroups.add({
+            'id': attributeData[0], // [id, name]
+            'name': attributeData[1],
+            'values': attributeValues.map((v) => v.toJson()).toList(),
+          });
+        } else {
+          print('No attribute values found for attribute ${attributeData[1]}, skipping...');
+        }
       }
       
       print('Created ${attributeGroups.length} attribute groups');
@@ -149,7 +184,57 @@ class POSBackendService {
     }
   }
   
-  /// Load template attribute values with price_extra by product template and value IDs
+  /// Load template attribute values directly by IDs
+  Future<List<ProductAttributeValue>> _loadTemplateAttributeValuesByIds(List<int> templateValueIds) async {
+    try {
+      if (templateValueIds.isEmpty) return [];
+      
+      print('Loading template attribute values by IDs: $templateValueIds');
+      
+      // Get template attribute values with price_extra
+      final templateValuesData = await _apiClient.searchRead(
+        'product.template.attribute.value',
+        domain: [['id', 'in', templateValueIds]],
+        fields: [
+          'id', 'product_attribute_value_id', 'price_extra', 'html_color', 'name',
+          'attribute_id', 'attribute_line_id'
+        ],
+      );
+      
+      print('Template values data: $templateValuesData');
+      
+      List<ProductAttributeValue> result = [];
+      
+      for (var templateValue in templateValuesData) {
+        final priceExtra = (templateValue['price_extra'] as num?)?.toDouble() ?? 0.0;
+        print('Template Value ${templateValue['name']}: price_extra = $priceExtra');
+        
+        // Create ProductAttributeValue with price_extra
+        final value = ProductAttributeValue(
+          id: templateValue['product_attribute_value_id'] is List 
+              ? templateValue['product_attribute_value_id'][0] 
+              : templateValue['product_attribute_value_id'],
+          name: templateValue['name'] ?? 'Unknown',
+          attributeId: templateValue['attribute_id'] is List 
+              ? templateValue['attribute_id'][0] 
+              : templateValue['attribute_id'],
+          sequence: 10,
+          htmlColor: _extractNullableStringFromOdoo(templateValue['html_color']),
+          priceExtra: priceExtra,
+        );
+        
+        result.add(value);
+      }
+      
+      return result;
+      
+    } catch (e) {
+      print('Error loading template attribute values by IDs: $e');
+      return [];
+    }
+  }
+
+  /// Load template attribute values with price_extra by product template and value IDs (fallback method)
   Future<List<ProductAttributeValue>> _loadTemplateAttributeValues(int productTmplId, List<int> valueIds) async {
     try {
       if (valueIds.isEmpty) return [];
@@ -196,7 +281,7 @@ class POSBackendService {
           name: basicValue['name'],
           attributeId: basicValue['attribute_id'] is List ? basicValue['attribute_id'][0] : basicValue['attribute_id'],
           sequence: basicValue['sequence'] ?? 10,
-          htmlColor: basicValue['html_color'] as String?,
+          htmlColor: _extractNullableStringFromOdoo(basicValue['html_color']),
           priceExtra: priceExtra,
         );
         
@@ -207,28 +292,19 @@ class POSBackendService {
       
     } catch (e) {
       print('Error loading template attribute values: $e');
-      // Fallback to basic attribute values without price_extra
-      return await _loadAttributeValues(valueIds);
+      return [];
     }
   }
 
-  /// Load basic attribute values by IDs (fallback method)
-  Future<List<ProductAttributeValue>> _loadAttributeValues(List<int> valueIds) async {
-    try {
-      if (valueIds.isEmpty) return [];
-      
-      final valuesData = await _apiClient.searchRead(
-        'product.attribute.value',
-        domain: [['id', 'in', valueIds]],
-        fields: ['id', 'name', 'attribute_id', 'html_color', 'sequence'],
-      );
-      
-      return valuesData.map((data) => ProductAttributeValue.fromJson(data)).toList();
-      
-    } catch (e) {
-      print('Error loading attribute values: $e');
-      return [];
+  /// Helper function to extract nullable string values from Odoo (handles false values)
+  String? _extractNullableStringFromOdoo(dynamic value) {
+    if (value == false || value == null) {
+      return null;
     }
+    if (value is String) {
+      return value.isEmpty ? null : value;
+    }
+    return value.toString();
   }
   
   /// Calculate VAT rate from tax IDs
@@ -351,7 +427,8 @@ class POSBackendService {
         domain: [['active', '=', true]],
         fields: [
           'id', 'name', 'active', 'company_id', 'currency_id', 'cash_control',
-          'sequence_line_id', 'sequence_id', 'session_ids'
+          'sequence_line_id', 'sequence_id', 'session_ids', 'pricelist_id',
+          'available_pricelist_ids', 'use_pricelist'
         ],
       );
 
@@ -359,6 +436,8 @@ class POSBackendService {
       print('POSBackendService: Successfully loaded ${_availableConfigs.length} POS configurations');
       for (final config in _availableConfigs) {
         print('  - Found config: ${config.name} (ID: ${config.id}, Active: ${config.active})');
+        print('    Use Pricelist: ${config.usePricelist}, Default Pricelist: ${config.pricelistId}');
+        print('    Available Pricelists: ${config.availablePricelistIds}');
       }
     } catch (e) {
       print('Error loading configurations: $e');
@@ -463,6 +542,15 @@ class POSBackendService {
         // Create default tax to prevent crashes
         _taxes = [_createDefaultTax()];
         print('Created default tax to prevent crashes');
+      }
+
+      // Load pricelists for the session
+      try {
+        await _loadPricelists(session);
+      } catch (pricelistError) {
+        print('Warning: Failed to load pricelists, continuing without pricelist data: $pricelistError');
+        _pricelists = [];
+        _pricelistItems = [];
       }
 
       // Start background sync
@@ -583,7 +671,7 @@ class POSBackendService {
           ['id', 'in', attributeLineIds],
         ],
         fields: [
-          'id', 'product_tmpl_id', 'attribute_id', 'value_ids'
+          'id', 'product_tmpl_id', 'attribute_id', 'value_ids', 'product_template_value_ids'
         ],
       );
 
@@ -600,7 +688,8 @@ class POSBackendService {
         print('Line ID: ${line['id']}');
         print('Template ID: $templateId');
         print('Attribute ID: ${line['attribute_id']}');
-        print('Value IDs: ${line['value_ids']}');
+        print('Value IDs (attribute values): ${line['value_ids']}');
+        print('Product Template Value IDs: ${line['product_template_value_ids']}');
         print('---');
       }
       print('===========================');
@@ -764,6 +853,116 @@ class POSBackendService {
       invoiceRepartitionLineIds: [],
       refundRepartitionLineIds: [],
     );
+  }
+
+  /// Load pricelists based on session config
+  Future<void> _loadPricelists(POSSession session) async {
+    try {
+      print('Loading pricelists for session...');
+      
+      // Find the config for this session
+      final config = _availableConfigs.firstWhere(
+        (config) => config.id == session.configId,
+        orElse: () => throw Exception('Config not found for session'),
+      );
+
+      // Determine which pricelists to load
+      List<int> pricelistIds = [];
+      if (config.usePricelist == true && config.availablePricelistIds != null) {
+        pricelistIds = config.availablePricelistIds!;
+      } else if (config.pricelistId != null) {
+        pricelistIds = [config.pricelistId!];
+      }
+
+      if (pricelistIds.isEmpty) {
+        print('No pricelists configured for this POS config');
+        _pricelists = [];
+        _pricelistItems = [];
+        _pricelistsController.add(_pricelists);
+        return;
+      }
+
+      print('Loading pricelists: $pricelistIds');
+
+      // Load pricelists
+      final pricelistsData = await _apiClient.searchRead(
+        'product.pricelist',
+        domain: [['id', 'in', pricelistIds]],
+        fields: [
+          'id', 'name', 'display_name', 'active', 'company_id', 'currency_id',
+          'sequence', 'item_ids', 'country_group_ids'
+        ],
+      );
+
+      _pricelists = pricelistsData.map((data) => ProductPricelist.fromJson(data)).toList();
+      
+      // Load pricelist items
+      await _loadPricelistItems(pricelistIds);
+
+      print('Successfully loaded ${_pricelists.length} pricelists with ${_pricelistItems.length} items');
+      _pricelistsController.add(_pricelists);
+      
+    } catch (e) {
+      print('Error loading pricelists: $e');
+      throw e;
+    }
+  }
+
+  /// Load pricelist items for given pricelist IDs
+  Future<void> _loadPricelistItems(List<int> pricelistIds) async {
+    try {
+      print('Loading pricelist items for pricelists: $pricelistIds');
+      
+      final pricelistItemsData = await _apiClient.searchRead(
+        'product.pricelist.item',
+        domain: [['pricelist_id', 'in', pricelistIds]],
+        fields: [
+          'id', 'pricelist_id', 'product_tmpl_id', 'product_id', 'categ_id',
+          'applied_on', 'min_quantity', 'compute_price', 'fixed_price',
+          'percent_price', 'price_discount', 'price_round', 'price_surcharge',
+          'price_min_margin', 'price_max_margin', 'base', 'base_pricelist_id',
+          'date_start', 'date_end', 'company_id', 'currency_id'
+        ],
+      );
+
+      _pricelistItems = pricelistItemsData.map((data) => ProductPricelistItem.fromJson(data)).toList();
+      
+      print('Successfully loaded ${_pricelistItems.length} pricelist items');
+      
+    } catch (e) {
+      print('Error loading pricelist items: $e');
+      throw e;
+    }
+  }
+
+  /// Get pricelists for a specific config
+  List<ProductPricelist> getPricelistsForConfig(POSConfig config) {
+    if (config.usePricelist == true && config.availablePricelistIds != null) {
+      return _pricelists.where((pricelist) => 
+        config.availablePricelistIds!.contains(pricelist.id)
+      ).toList();
+    } else if (config.pricelistId != null) {
+      return _pricelists.where((pricelist) => 
+        pricelist.id == config.pricelistId
+      ).toList();
+    }
+    return [];
+  }
+
+  /// Get pricelist items for a specific pricelist
+  List<ProductPricelistItem> getItemsForPricelist(int pricelistId) {
+    return _pricelistItems.where((item) => item.pricelistId == pricelistId).toList();
+  }
+
+  /// Get default pricelist for a config
+  ProductPricelist? getDefaultPricelistForConfig(POSConfig config) {
+    if (config.pricelistId != null) {
+      return _pricelists.firstWhere(
+        (pricelist) => pricelist.id == config.pricelistId,
+        orElse: () => throw StateError('Default pricelist not found'),
+      );
+    }
+    return null;
   }
 
   /// Load cached data from local storage
@@ -1071,11 +1270,14 @@ class POSBackendService {
     _categories.clear();
     _customers.clear();
     _paymentMethods.clear();
+    _pricelists.clear();
+    _pricelistItems.clear();
     _taxes.clear();
     
     _productsController.add(_products);
     _categoriesController.add(_categories);
     _customersController.add(_customers);
+    _pricelistsController.add(_pricelists);
   }
 
   /// Logout user
@@ -1117,6 +1319,7 @@ class POSBackendService {
     _productsController.close();
     _categoriesController.close();
     _customersController.close();
+    _pricelistsController.close();
     _loadingController.close();
     _statusController.close();
     

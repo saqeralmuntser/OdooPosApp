@@ -49,6 +49,12 @@ class POSOrderLine {
   final List<int> taxIdsAfterFiscalPosition;
   @JsonKey(name: 'pack_lot_ids')
   final List<int> packLotIds;
+  
+  // Product attributes (local only, not sent to server)
+  @JsonKey(includeToJson: false, includeFromJson: false)
+  final List<String>? attributeNames;
+  @JsonKey(includeToJson: false, includeFromJson: false)
+  final List<double>? attributeExtraPrices;
 
   POSOrderLine({
     required this.id,
@@ -72,6 +78,8 @@ class POSOrderLine {
     this.taxIds = const [],
     this.taxIdsAfterFiscalPosition = const [],
     this.packLotIds = const [],
+    this.attributeNames,
+    this.attributeExtraPrices,
   });
 
   factory POSOrderLine.fromJson(Map<String, dynamic> json) => _$POSOrderLineFromJson(json);
@@ -118,8 +126,8 @@ class POSOrderLine {
   /// Check if line is refunded
   bool get isRefunded => refundedOrderlineId != null || refundedQty > 0;
 
-  /// Check if line has custom attributes (not supported in Odoo 18)
-  bool get hasCustomAttributes => false;
+  /// Check if line has custom attributes
+  bool get hasCustomAttributes => attributeNames != null && attributeNames!.isNotEmpty;
 
   /// Check if line has lot/serial numbers
   bool get hasLotNumbers => packLotIds.isNotEmpty;
@@ -132,6 +140,21 @@ class POSOrderLine {
 
   /// Calculate total profit for this line
   double get totalProfit => profitPerUnit * qty;
+
+  /// Get formatted attributes string for display
+  String get attributesDisplay {
+    if (!hasCustomAttributes) return '';
+    return attributeNames!.join(', ');
+  }
+
+  /// Get product name with attributes
+  String get displayNameWithAttributes {
+    final baseName = fullProductName ?? 'منتج غير محدد';
+    if (hasCustomAttributes) {
+      return '$baseName ($attributesDisplay)';
+    }
+    return baseName;
+  }
 
   POSOrderLine copyWith({
     int? id,
@@ -155,6 +178,8 @@ class POSOrderLine {
     List<int>? taxIds,
     List<int>? taxIdsAfterFiscalPosition,
     List<int>? packLotIds,
+    List<String>? attributeNames,
+    List<double>? attributeExtraPrices,
   }) {
     return POSOrderLine(
       id: id ?? this.id,
@@ -178,6 +203,8 @@ class POSOrderLine {
       taxIds: taxIds ?? this.taxIds,
       taxIdsAfterFiscalPosition: taxIdsAfterFiscalPosition ?? this.taxIdsAfterFiscalPosition,
       packLotIds: packLotIds ?? this.packLotIds,
+      attributeNames: attributeNames ?? this.attributeNames,
+      attributeExtraPrices: attributeExtraPrices ?? this.attributeExtraPrices,
     );
   }
 }

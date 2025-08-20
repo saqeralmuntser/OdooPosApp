@@ -4,7 +4,7 @@ import '../theme/app_theme.dart';
 
 class CustomerFormDialog extends StatefulWidget {
   final ResPartner? customer;
-  final Function(ResPartner) onSave;
+  final Function(ResPartner, {bool selectAfterSave}) onSave;
 
   const CustomerFormDialog({
     super.key,
@@ -88,7 +88,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog>
     super.dispose();
   }
 
-  void _saveCustomer() {
+  void _saveCustomer({bool selectAfterSave = false}) {
     if (!_formKey.currentState!.validate()) return;
 
     final customer = ResPartner(
@@ -124,7 +124,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog>
       customerRank: 1, // Mark as customer
     );
 
-    widget.onSave(customer);
+    widget.onSave(customer, selectAfterSave: selectAfterSave);
     Navigator.of(context).pop();
   }
 
@@ -149,7 +149,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog>
               child: Row(
                 children: [
                   Text(
-                    widget.customer == null ? 'Create Customer' : 'Edit Partner',
+                    widget.customer == null ? 'إنشاء عميل جديد' : 'تعديل بيانات العميل',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 18,
@@ -249,12 +249,29 @@ class _CustomerFormDialogState extends State<CustomerFormDialog>
                 children: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Discard'),
+                    child: const Text('إلغاء'),
                   ),
                   const SizedBox(width: 16),
+                  if (widget.customer == null) ...[
+                    // For new customers, show "Save & Select" button
+                    ElevatedButton.icon(
+                      onPressed: () => _saveCustomer(selectAfterSave: true),
+                      icon: const Icon(Icons.person_add),
+                      label: const Text('حفظ واختيار'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
                   ElevatedButton(
-                    onPressed: _saveCustomer,
-                    child: const Text('Save'),
+                    onPressed: () => _saveCustomer(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryColor,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('حفظ'),
                   ),
                 ],
               ),

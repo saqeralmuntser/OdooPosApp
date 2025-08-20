@@ -210,16 +210,27 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                                           Expanded(
                                             flex: 3,
                                             child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  item.fullProductName ?? 'Unknown Product',
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                                // Note: Custom attributes are not supported in Odoo 18
-                                              ],
+                                                                            crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item.fullProductName ?? 'Unknown Product',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                // Show attributes if they exist
+                                if (item.hasCustomAttributes) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    item.attributesDisplay,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ],
+                              ],
                                             ),
                                           ),
                                           Expanded(
