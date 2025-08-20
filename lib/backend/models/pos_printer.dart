@@ -11,6 +11,7 @@ class PosPrinter {
   final ReceiptPrinterType? receiptPrinterType;
   final DateTime? createDate;
   final DateTime? writeDate;
+  final List<int> categoryIds; // الفئات المرتبطة بهذه الطابعة
 
   const PosPrinter({
     required this.id,
@@ -23,6 +24,7 @@ class PosPrinter {
     this.receiptPrinterType,
     this.createDate,
     this.writeDate,
+    this.categoryIds = const [],
   });
 
   factory PosPrinter.fromJson(Map<String, dynamic> json) {
@@ -49,6 +51,7 @@ class PosPrinter {
       writeDate: json['write_date'] != null
           ? DateTime.parse(json['write_date'])
           : null,
+      categoryIds: _parseCategoryIds(json['category_ids']),
     );
   }
 
@@ -63,6 +66,22 @@ class PosPrinter {
     return value.toString();
   }
 
+  /// Parse category_ids which can be List, false, or null
+  static List<int> _parseCategoryIds(dynamic value) {
+    if (value == null || value == false) {
+      return [];
+    }
+    if (value is List) {
+      try {
+        return value.cast<int>();
+      } catch (e) {
+        // إذا فشل التحويل، حاول استخراج الأرقام يدوياً
+        return value.where((item) => item is int).cast<int>().toList();
+      }
+    }
+    return [];
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -75,6 +94,7 @@ class PosPrinter {
       'receipt_printer_type': receiptPrinterType?.value,
       'create_date': createDate?.toIso8601String(),
       'write_date': writeDate?.toIso8601String(),
+      'category_ids': categoryIds,
     };
   }
 
@@ -109,6 +129,21 @@ class PosPrinter {
   /// Check if printer can be used with Windows printing
   bool get isWindowsCompatible => isUsbPrinter || isNetworkPrinter || printerType == PrinterType.epsonEpos;
 
+  /// Check if this printer has assigned categories
+  bool get hasCategories => categoryIds.isNotEmpty;
+
+  /// Check if this printer should print items from a specific category
+  bool shouldPrintCategory(int categoryId) => categoryIds.contains(categoryId);
+
+  /// Check if this printer should print items from any of the specified categories
+  bool shouldPrintAnyCategory(List<int> categories) => 
+      categories.any((catId) => categoryIds.contains(catId));
+
+  /// Get category display info for debugging
+  String get categoryDisplayInfo => hasCategories 
+      ? 'Categories: ${categoryIds.join(', ')}'
+      : 'No categories assigned';
+
   PosPrinter copyWith({
     int? id,
     String? name,
@@ -120,6 +155,7 @@ class PosPrinter {
     ReceiptPrinterType? receiptPrinterType,
     DateTime? createDate,
     DateTime? writeDate,
+    List<int>? categoryIds,
   }) {
     return PosPrinter(
       id: id ?? this.id,
@@ -132,6 +168,7 @@ class PosPrinter {
       receiptPrinterType: receiptPrinterType ?? this.receiptPrinterType,
       createDate: createDate ?? this.createDate,
       writeDate: writeDate ?? this.writeDate,
+      categoryIds: categoryIds ?? this.categoryIds,
     );
   }
 }

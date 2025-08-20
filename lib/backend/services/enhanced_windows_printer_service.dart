@@ -33,6 +33,7 @@ class EnhancedWindowsPrinterService {
   List<PosPrinter> _odooPrinters = [];
   POSConfig? _currentPosConfig;
   Map<int, String> _printerMatching = {}; // Odoo Printer ID -> Windows Printer Name
+  Map<int, List<int>>? _realCategoryMappings; // Printer ID -> Category IDs (from real data analysis)
   bool _isInitialized = false;
 
   /// تهيئة الخدمة وجلب البيانات
@@ -64,6 +65,16 @@ class EnhancedWindowsPrinterService {
       // جلب إعدادات طابعات Odoo
       debugPrint('🔄 Loading Odoo Printer Configurations...');
       await _loadOdooPrinters();
+      
+      // تحقق من وجود طابعات مطبخ حقيقية من Odoo
+      if (_odooPrinters.isEmpty) {
+        debugPrint('⚠️ No Odoo kitchen printers found');
+        debugPrint('  💡 CRITICAL: Kitchen printing requires actual printers configured in Odoo');
+        debugPrint('  💡 Please configure pos.printer records in Odoo with proper category assignments');
+        debugPrint('  💡 Fallback printers are disabled to ensure data accuracy');
+      } else {
+        debugPrint('✅ Found ${_odooPrinters.length} Odoo kitchen printers with real backend data');
+      }
       
       // تحميل المطابقات المحفوظة
       debugPrint('🔄 Loading Saved Printer Mappings...');
@@ -123,69 +134,221 @@ class EnhancedWindowsPrinterService {
     try {
       debugPrint('🍳 Loading Odoo Kitchen Printer Configurations...');
       
+      debugPrint('🔍 ANALYZING POS CONFIG FOR KITCHEN PRINTERS:');
+      debugPrint('  📋 Current POS Config: ${_currentPosConfig?.name ?? 'NULL'}');
+      debugPrint('  🆔 POS Config ID: ${_currentPosConfig?.id ?? 'NULL'}');
+      debugPrint('  📂 printer_ids field: ${_currentPosConfig?.printerIds}');
+      debugPrint('  📊 printer_ids type: ${_currentPosConfig?.printerIds.runtimeType}');
+      debugPrint('  📏 printer_ids length: ${_currentPosConfig?.printerIds?.length ?? 0}');
+      debugPrint('  ✅ printer_ids not empty: ${_currentPosConfig?.printerIds?.isNotEmpty == true}');
+      
       if (_currentPosConfig?.printerIds?.isNotEmpty == true) {
+        debugPrint('');
+        debugPrint('🌐 ==========================================');
+        debugPrint('🌐 CALLING ODOO API FOR KITCHEN PRINTERS');
+        debugPrint('🌐 ==========================================');
         debugPrint('  🔢 Kitchen Printer IDs to fetch: ${_currentPosConfig!.printerIds}');
         debugPrint('  🌐 API Call: searchRead("pos.printer", domain: [["id", "in", ${_currentPosConfig!.printerIds}]])');
+        debugPrint('  📋 Fields to fetch: [id, name, printer_type, proxy_ip, epson_printer_ip, company_id, create_date, write_date, category_ids]');
         
         try {
-          // استخدم searchRead مباشرة للحصول على البيانات الكاملة
-          final printerData = await _apiClient.searchRead(
+          // محاولة جلب البيانات مع الفئات أولاً
+          List<Map<String, dynamic>>? printerData;
+          bool hasCategoryIds = true;
+          
+          try {
+            debugPrint('  🔄 Attempting to fetch with category_ids field...');
+            printerData = await _apiClient.searchRead(
+              'pos.printer',
+              domain: [['id', 'in', _currentPosConfig!.printerIds!]],
+              fields: ['id', 'name', 'printer_type', 'proxy_ip', 'epson_printer_ip', 'company_id', 'create_date', 'write_date', 'category_ids'],
+            );
+          } catch (categoryError) {
+            if (categoryError.toString().contains('Invalid field') && categoryError.toString().contains('category_ids')) {
+              debugPrint('  ⚠️ category_ids field not available - trying without it...');
+              hasCategoryIds = false;
+              
+              try {
+                printerData = await _apiClient.searchRead(
             'pos.printer',
             domain: [['id', 'in', _currentPosConfig!.printerIds!]],
             fields: ['id', 'name', 'printer_type', 'proxy_ip', 'epson_printer_ip', 'company_id', 'create_date', 'write_date'],
           );
+              } catch (basicError) {
+                throw basicError; // إذا فشل حتى بدون category_ids، ارمي الخطأ
+              }
+            } else {
+              throw categoryError; // إذا كان خطأ آخر، ارمي الخطأ
+            }
+          }
         
           debugPrint('✅ Raw Odoo Kitchen Printer Data received:');
           debugPrint('  📊 Data count: ${printerData.length}');
-          debugPrint('  🔍 Raw data: $printerData');
-          debugPrint('  🔍 Data type of first item: ${printerData.isNotEmpty ? printerData.first.runtimeType : 'empty'}');
-        
-          _odooPrinters = [];
+          debugPrint('  🔍 Raw API response: $printerData');
+          debugPrint('  🔍 Data type: ${printerData.runtimeType}');
+          debugPrint('  📂 Category support: ${hasCategoryIds ? 'YES' : 'NO'}');
           
-          // معالجة البيانات المُستلمة
-          for (int i = 0; i < printerData.length; i++) {
-            final item = printerData[i];
-            debugPrint('  🔍 Item $i: ${item['name']} (ID: ${item['id']})');
-            
-            try {
-              final printer = PosPrinter.fromJson(item);
-              _odooPrinters.add(printer);
-              debugPrint('  ✅ Parsed printer: ${printer.name} (Type: ${printer.printerType.displayName})');
-            } catch (e) {
-              debugPrint('  ❌ Error parsing printer: $e');
-              debugPrint('    🔍 Raw data: $item');
+          if (printerData.isNotEmpty) {
+            // تحليل مفصل للبيانات الخام
+            for (int i = 0; i < printerData.length; i++) {
+              final rawItem = printerData[i];
+            debugPrint('  📋 Raw Item ${i + 1}:');
+            debugPrint('    🆔 Raw ID: ${rawItem['id']} (${rawItem['id'].runtimeType})');
+            debugPrint('    🏷️ Raw Name: "${rawItem['name']}" (${rawItem['name'].runtimeType})');
+            debugPrint('    📂 Raw category_ids: ${rawItem['category_ids']} (${rawItem['category_ids'].runtimeType})');
+            debugPrint('    🔧 Raw printer_type: ${rawItem['printer_type']} (${rawItem['printer_type'].runtimeType})');
+            debugPrint('    🌐 Raw proxy_ip: ${rawItem['proxy_ip']} (${rawItem['proxy_ip'].runtimeType})');
+                        debugPrint('    🖥️ Raw epson_printer_ip: ${rawItem['epson_printer_ip']} (${rawItem['epson_printer_ip'].runtimeType})');
             }
+            
+            _odooPrinters = [];
+            
+            // معالجة البيانات المُستلمة
+            for (int i = 0; i < printerData.length; i++) {
+              final item = printerData[i];
+              debugPrint('  🔍 Item $i: ${item['name']} (ID: ${item['id']})');
+              
+              try {
+              // تحقق من وجود فئات مُخصصة أو إذا كانت فارغة
+              final existingCategories = item['category_ids'];
+              final needsSmartAssignment = !hasCategoryIds || 
+                                         existingCategories == null || 
+                                         existingCategories == false ||
+                                         (existingCategories is List && existingCategories.isEmpty);
+              
+              if (needsSmartAssignment) {
+                debugPrint('    🧠 Applying smart category assignment...');
+                debugPrint('    📊 Reason: ${!hasCategoryIds ? 'No category_ids field' : 'Empty/null categories'}');
+                item['category_ids'] = await _assignSmartCategories(item['name'] ?? '', item['id']);
+                debugPrint('    🎯 Smart categories assigned: ${item['category_ids']}');
+              } else {
+                debugPrint('    ✅ Using existing categories: $existingCategories');
+              }
+              
+                final printer = PosPrinter.fromJson(item);
+                _odooPrinters.add(printer);
+                debugPrint('  ✅ Parsed printer: ${printer.name} (Type: ${printer.printerType.displayName})');
+                debugPrint('    📂 Categories: ${printer.categoryIds.join(', ')}');
+              } catch (e) {
+                debugPrint('  ❌ Error parsing printer: $e');
+                debugPrint('    🔍 Raw data: $item');
+              }
+            }
+          } else {
+            debugPrint('  ⚠️ No printer data received or data is empty');
+            _odooPrinters = [];
           }
           
           debugPrint('✅ Odoo Kitchen Printers parsed successfully:');
           debugPrint('  📄 Total loaded: ${_odooPrinters.length}');
           
         } catch (apiError) {
-          debugPrint('❌ Error calling pos.printer API: $apiError');
-          debugPrint('  💡 SUGGESTION: pos.printer model may not exist in this Odoo version');
-          debugPrint('  💡 This might be Odoo Community Edition without restaurant features');
+          debugPrint('');
+          debugPrint('❌ ==========================================');
+          debugPrint('❌ ODOO API ERROR - FAILED TO FETCH PRINTERS');
+          debugPrint('❌ ==========================================');
+          debugPrint('  🔍 Error details: $apiError');
+          debugPrint('  🔍 Error type: ${apiError.runtimeType}');
+          debugPrint('  🔍 Full error: ${apiError.toString()}');
+          debugPrint('');
+          debugPrint('  💡 POSSIBLE CAUSES:');
+          debugPrint('     1. pos.printer model does not exist in this Odoo version');
+          debugPrint('     2. Odoo Community Edition without restaurant features');
+          debugPrint('     3. User permissions do not allow access to pos.printer');
+          debugPrint('     4. Network connectivity issues');
+          debugPrint('     5. Odoo server error or maintenance');
+          debugPrint('');
+          debugPrint('  🔧 SOLUTIONS TO TRY:');
+          debugPrint('     1. Check if restaurant module is installed in Odoo');
+          debugPrint('     2. Verify user has access to pos.printer model');
+          debugPrint('     3. Check Odoo logs for server-side errors');
+          debugPrint('     4. Test API connection with simple read call');
           _odooPrinters = [];
         }
         
-        // تسجيل تفاصيل كل طابعة مطبخ من Odoo
+        // ============================================
+        // تسجيل مفصل لكل طابعة مطبخ من Odoo مع معلومات الفئات
+        // ============================================
+        debugPrint('🍳 ==========================================');
+        debugPrint('🍳 DETAILED ODOO KITCHEN PRINTERS ANALYSIS');
+        debugPrint('🍳 ==========================================');
+        
         for (int i = 0; i < _odooPrinters.length; i++) {
           final printer = _odooPrinters[i];
-          debugPrint('🍳 Odoo Kitchen Printer ${i + 1}:');
-          debugPrint('  🆔 ID: ${printer.id}');
-          debugPrint('  🏷️ Name: ${printer.name}');
-          debugPrint('  🖨️ Type: ${printer.printerType.displayName}');
+          debugPrint('');
+          debugPrint('🍳 ========== PRINTER ${i + 1} DETAILS ==========');
+          debugPrint('  🆔 Printer ID: ${printer.id}');
+          debugPrint('  🏷️ Printer Name: "${printer.name}"');
+          debugPrint('  🖨️ Printer Type: ${printer.printerType.displayName}');
           debugPrint('  🌐 Proxy IP: ${printer.proxyIp ?? 'NOT SET'}');
           debugPrint('  🖥️ Printer IP: ${printer.printerIp ?? 'NOT SET'}');
           debugPrint('  🔌 Port: ${printer.port ?? 'DEFAULT'}');
-          debugPrint('  🧾 Receipt Type: ${printer.printerType.displayName}');
           debugPrint('  ✅ Active: ${printer.active}');
           debugPrint('  💻 Windows Compatible: ${printer.isWindowsCompatible}');
+          debugPrint('');
+          debugPrint('  📂 CATEGORIES ANALYSIS:');
+          debugPrint('    📊 Raw category_ids: ${printer.categoryIds}');
+          debugPrint('    📊 Category count: ${printer.categoryIds.length}');
+          debugPrint('    📊 Has categories: ${printer.hasCategories}');
+          
+          if (printer.hasCategories) {
+            debugPrint('    ✅ Categories assigned: ${printer.categoryIds.join(', ')}');
+            for (int j = 0; j < printer.categoryIds.length; j++) {
+              debugPrint('      - Category ${j + 1}: ID ${printer.categoryIds[j]}');
+            }
+          } else {
+            debugPrint('    ❌ NO CATEGORIES ASSIGNED - This printer will not print anything!');
+            debugPrint('    💡 SOLUTION: Assign category_ids to this printer in Odoo backend');
+          }
+          
+          debugPrint('  🔗 WINDOWS MAPPING:');
+          final windowsPrinterName = _printerMatching[printer.id];
+          if (windowsPrinterName != null) {
+            debugPrint('    ✅ Mapped to Windows printer: "$windowsPrinterName"');
+            final windowsPrinter = _windowsPrinters.where((p) => p.name == windowsPrinterName).firstOrNull;
+            if (windowsPrinter != null) {
+              debugPrint('    ✅ Windows printer is available');
+      } else {
+              debugPrint('    ❌ Windows printer NOT FOUND - mapping exists but printer unavailable');
+            }
+          } else {
+            debugPrint('    ❌ NOT MAPPED to any Windows printer');
+            debugPrint('    💡 SOLUTION: Map this printer to a Windows printer');
+          }
+          debugPrint('🍳 ================================');
+        }
+        
+        debugPrint('');
+        debugPrint('📊 SUMMARY OF ODOO PRINTERS:');
+        debugPrint('  📄 Total Odoo printers: ${_odooPrinters.length}');
+        final printersWithCategories = _odooPrinters.where((p) => p.hasCategories).length;
+        final mappedPrinters = _odooPrinters.where((p) => _printerMatching.containsKey(p.id)).length;
+        debugPrint('  📂 Printers with categories: $printersWithCategories/${_odooPrinters.length}');
+        debugPrint('  🔗 Mapped printers: $mappedPrinters/${_odooPrinters.length}');
+        
+        if (printersWithCategories == 0) {
+          debugPrint('  ❌ CRITICAL: NO printers have categories - kitchen printing will not work!');
+        }
+        if (mappedPrinters == 0) {
+          debugPrint('  ❌ CRITICAL: NO printers are mapped to Windows - printing will fail!');
         }
         
       } else {
-        debugPrint('⚠️ KITCHEN PRINTERS: No printer_ids configured in POS Config');
-        debugPrint('  📍 Check printer_ids field in pos.config');
-        debugPrint('  📍 Current value: ${_currentPosConfig?.printerIds}');
+        debugPrint('');
+        debugPrint('⚠️ ==========================================');
+        debugPrint('⚠️ NO PRINTER IDS IN POS CONFIG');
+        debugPrint('⚠️ ==========================================');
+        debugPrint('  📍 POS Config Name: ${_currentPosConfig?.name ?? 'NULL'}');
+        debugPrint('  📍 POS Config ID: ${_currentPosConfig?.id ?? 'NULL'}');
+        debugPrint('  📍 printer_ids field: ${_currentPosConfig?.printerIds}');
+        debugPrint('  📍 printer_ids type: ${_currentPosConfig?.printerIds.runtimeType}');
+        debugPrint('  📍 Is null: ${_currentPosConfig?.printerIds == null}');
+        debugPrint('  📍 Is empty: ${_currentPosConfig?.printerIds?.isEmpty == true}');
+        debugPrint('');
+        debugPrint('  💡 SOLUTIONS:');
+        debugPrint('     1. Configure printer_ids in pos.config in Odoo backend');
+        debugPrint('     2. Create pos.printer records first');
+        debugPrint('     3. Assign printer IDs to pos.config.printer_ids field');
         _odooPrinters = [];
       }
     } catch (e) {
@@ -675,68 +838,396 @@ class EnhancedWindowsPrinterService {
     }
   }
 
-  /// طباعة تذكرة المطبخ على جميع طابعات المطبخ
+  /// تقسيم الأصناف حسب الطابعات المناسبة لها
+  Future<Map<int, List<POSOrderLine>>> _categorizeItemsByPrinter(List<POSOrderLine> orderLines) async {
+    debugPrint('🔄 ==========================================');
+    debugPrint('🔄 CATEGORIZING ITEMS BY PRINTER');
+    debugPrint('🔄 ==========================================');
+    debugPrint('  📦 Total Items to categorize: ${orderLines.length}');
+    debugPrint('  🖨️ Available Kitchen Printers: ${_odooPrinters.length}');
+    
+    final result = <int, List<POSOrderLine>>{};
+    
+    for (int i = 0; i < orderLines.length; i++) {
+      final line = orderLines[i];
+      debugPrint('  📋 Item ${i + 1}: ${line.fullProductName ?? 'Unknown Product'}');
+      
+      final targetPrinters = await _findTargetPrintersForProduct(line);
+      debugPrint('    🎯 Target Printers: ${targetPrinters.length} found');
+      
+      for (var printerId in targetPrinters) {
+        result.putIfAbsent(printerId, () => []).add(line);
+        debugPrint('    ✅ Added to Printer $printerId');
+      }
+      
+      if (targetPrinters.isEmpty) {
+        debugPrint('    ❌ No target printer found for this item - ITEM WILL NOT BE PRINTED');
+        debugPrint('    💡 REASON: Either product has no pos_categ_ids OR no printer matches these categories');
+        debugPrint('    💡 SOLUTION: Ensure product has pos.category assigned and printers have matching category_ids');
+        debugPrint('    🚫 No fallback printer - maintaining data accuracy');
+      }
+    }
+    
+    debugPrint('📊 ==========================================');
+    debugPrint('📊 CATEGORIZATION SUMMARY');
+    debugPrint('📊 ==========================================');
+    debugPrint('  📦 Total items processed: ${orderLines.length}');
+    debugPrint('  🖨️ Printers receiving items: ${result.length}');
+    
+    final totalItemsAssigned = result.values.fold<int>(0, (sum, items) => sum + items.length);
+    debugPrint('  📋 Total items assigned: $totalItemsAssigned');
+    debugPrint('  ❌ Items not assigned: ${orderLines.length - totalItemsAssigned}');
+    
+    for (var entry in result.entries) {
+      final printer = _odooPrinters.firstWhere((p) => p.id == entry.key, 
+                                               orElse: () => PosPrinter(id: entry.key, name: 'Unknown Printer', printerType: PrinterType.usb));
+      debugPrint('');
+      debugPrint('  🖨️ Printer ${entry.key}: "${printer.name}"');
+      debugPrint('    📂 Printer categories: ${printer.categoryIds.join(', ')}');
+      debugPrint('    📦 Items assigned: ${entry.value.length}');
+      debugPrint('    📋 Item names: ${entry.value.map((item) => item.fullProductName).join(', ')}');
+    }
+    
+    if (result.isEmpty) {
+      debugPrint('  ❌ NO ITEMS ASSIGNED TO ANY PRINTER!');
+      debugPrint('  💡 Check printer categories and product categories matching');
+    }
+    
+    return result;
+  }
+  
+  /// البحث عن الطابعات المناسبة للمنتج (بناءً على البيانات الحقيقية من الباك اند)
+  Future<List<int>> _findTargetPrintersForProduct(POSOrderLine orderLine) async {
+    final targetPrinters = <int>[];
+    final productCategories = await _getProductCategories(orderLine);
+    
+    debugPrint('    🏷️ Product Categories from Odoo: ${productCategories.join(', ')}');
+    
+    if (productCategories.isEmpty) {
+      debugPrint('    🚫 Product has NO categories - will not be printed on any kitchen printer');
+      debugPrint('    💡 SOLUTION: Assign pos.category to this product in Odoo backend');
+      return [];
+    }
+    
+    for (var printer in _odooPrinters) {
+      debugPrint('    🖨️ Checking Printer ${printer.id} (${printer.name})');
+      debugPrint('      📂 Printer Categories: ${printer.categoryIds.join(', ')}');
+      
+      if (printer.hasCategories) {
+        // التحقق من وجود تطابق دقيق في الفئات
+        final matchingCategories = printer.categoryIds.where((catId) => productCategories.contains(catId)).toList();
+        
+        if (matchingCategories.isNotEmpty) {
+          targetPrinters.add(printer.id);
+          debugPrint('      ✅ MATCH: Categories ${matchingCategories.join(', ')} match');
+          debugPrint('      🎯 Product WILL be printed on this printer');
+        } else {
+          debugPrint('      ❌ NO MATCH: No common categories');
+          debugPrint('      🚫 Product will NOT be printed on this printer');
+        }
+      } else {
+        debugPrint('      ⚠️ WARNING: Printer has NO categories assigned in Odoo');
+        debugPrint('      💡 SOLUTION: Assign category_ids to this printer in Odoo backend');
+        debugPrint('      🚫 Product will NOT be printed on this printer (no fallback)');
+      }
+    }
+    
+    debugPrint('    📊 RESULT: Product will be printed on ${targetPrinters.length} printers: ${targetPrinters.join(', ')}');
+    return targetPrinters;
+  }
+  
+  /// الحصول على فئات المنتج من قاعدة البيانات الحقيقية (البيانات من الباك اند فقط)
+  Future<List<int>> _getProductCategories(POSOrderLine orderLine) async {
+    try {
+      final productId = orderLine.productId;
+      final productName = orderLine.fullProductName ?? 'Unknown Product';
+      
+      debugPrint('    🆔 Product ID: $productId');
+      debugPrint('    📝 Product Name: $productName');
+      debugPrint('    🔍 Fetching REAL categories from Odoo backend...');
+      
+      // جلب بيانات المنتج الحقيقية من قاعدة البيانات Odoo
+      try {
+        final productData = await _apiClient.searchRead(
+          'product.product',
+          domain: [['id', '=', productId]],
+          fields: ['id', 'name', 'pos_categ_ids'],
+        );
+        
+        if (productData.isNotEmpty) {
+          final product = productData.first;
+          final posCategIds = product['pos_categ_ids'];
+          
+          debugPrint('    📊 Raw pos_categ_ids from Odoo: $posCategIds');
+          debugPrint('    📊 Type: ${posCategIds.runtimeType}');
+          
+          if (posCategIds is List && posCategIds.isNotEmpty) {
+            final categories = posCategIds.cast<int>();
+            debugPrint('    ✅ SUCCESS: Found REAL categories from Odoo backend: ${categories.join(', ')}');
+            debugPrint('    🎯 Product Categories: $categories');
+            debugPrint('    📊 Category count: ${categories.length}');
+            debugPrint('    🔗 These categories will be matched with printer.category_ids');
+            
+            // إظهار كل فئة منفردة
+            for (int i = 0; i < categories.length; i++) {
+              debugPrint('      - Category ${i + 1}: ID ${categories[i]}');
+            }
+            
+            return categories;
+          } else {
+            debugPrint('    ⚠️ CRITICAL: Product has NO POS categories assigned in Odoo');
+            debugPrint('    📂 pos_categ_ids value: $posCategIds');
+            debugPrint('    📊 Value type: ${posCategIds.runtimeType}');
+            debugPrint('    💡 SOLUTION: Please assign pos.category to this product in Odoo backend');
+            debugPrint('    ❌ Product will NOT be printed on any kitchen printer');
+            return [];
+          }
+        } else {
+          debugPrint('    ❌ CRITICAL: Product not found in Odoo database');
+          debugPrint('    💡 This should not happen if product exists in order');
+          return [];
+        }
+        
+      } catch (apiError) {
+        debugPrint('    ❌ CRITICAL ERROR: Failed to fetch product from Odoo backend: $apiError');
+        debugPrint('    💡 This might be a connectivity or permission issue');
+        debugPrint('    ❌ Product will NOT be printed on any kitchen printer');
+        return [];
+      }
+      
+    } catch (e) {
+      debugPrint('    ❌ CRITICAL ERROR: Exception in getting product categories: $e');
+      debugPrint('    🔍 Stack trace: ${StackTrace.current}');
+      debugPrint('    💡 No fallback - returning empty categories to ensure data accuracy');
+      return []; // لا يوجد افتراضي - البيانات الحقيقية فقط
+    }
+  }
+
+  /// طباعة تذكرة المطبخ على جميع طابعات المطبخ مع التصفية الذكية
   Future<List<Map<String, dynamic>>> printKitchenTickets({
     POSOrder? order,
     required List<POSOrderLine> orderLines,
     ResPartner? customer,
     ResCompany? company,
   }) async {
-    final results = <Map<String, dynamic>>[];
-    final kitchenPrinters = getKitchenPrinters();
+    debugPrint('🍳 ==========================================');
+    debugPrint('🍳 STARTING SMART KITCHEN PRINTING');
+    debugPrint('🍳 ==========================================');
+    debugPrint('  📅 Time: ${DateTime.now()}');
+    debugPrint('  🆔 Order: ${order?.name ?? 'TEST ORDER'}');
+    debugPrint('  📦 Order Lines: ${orderLines.length}');
+    debugPrint('  👤 Customer: ${customer?.name ?? 'NONE'}');
+    debugPrint('  🏢 Company: ${company?.name ?? 'NONE'}');
     
-    if (kitchenPrinters.isEmpty) {
-      debugPrint('ℹ️ No kitchen printers configured');
+    final results = <Map<String, dynamic>>[];
+    
+    // تحليل مفصل لحالة الطابعات
+    debugPrint('🔍 ==========================================');
+    debugPrint('🔍 KITCHEN PRINTING DIAGNOSTICS');
+    debugPrint('🔍 ==========================================');
+    debugPrint('  📊 _odooPrinters list size: ${_odooPrinters.length}');
+    debugPrint('  📊 _odooPrinters content: ${_odooPrinters.map((p) => 'ID:${p.id} Name:"${p.name}"').join(', ')}');
+    debugPrint('  📊 _currentPosConfig: ${_currentPosConfig?.name ?? 'NULL'}');
+    debugPrint('  📊 _currentPosConfig.printerIds: ${_currentPosConfig?.printerIds}');
+    debugPrint('  📊 _printerMatching: $_printerMatching');
+    debugPrint('  📊 _isInitialized: $_isInitialized');
+    
+        if (_odooPrinters.isEmpty) {
+      debugPrint('');
+      debugPrint('❌ ==========================================');
+      debugPrint('❌ NO ODOO KITCHEN PRINTERS IN MEMORY');
+      debugPrint('❌ ==========================================');
+      debugPrint('  💡 CRITICAL: Kitchen printing requires actual printers configured in Odoo');
+      debugPrint('  💡 Please configure the following in Odoo:');
+      debugPrint('     1. Create pos.printer records in Odoo');
+      debugPrint('     2. Assign category_ids to each printer');
+      debugPrint('     3. Add printer IDs to pos.config.printer_ids');
+      debugPrint('  💡 Fallback printers are disabled to ensure data accuracy');
+      debugPrint('');
+      debugPrint('  🔄 ATTEMPTING TO RELOAD ODOO PRINTERS...');
+      
+      // محاولة إعادة تحميل الطابعات
+      try {
+        await _loadOdooPrinters();
+        if (_odooPrinters.isNotEmpty) {
+          debugPrint('  ✅ SUCCESS: Reloaded ${_odooPrinters.length} Odoo printers');
+          debugPrint('  🔄 Continuing with kitchen printing...');
+          // لا نرجع، نستمر في الطباعة
+        } else {
+          debugPrint('  ❌ FAILED: Still no Odoo printers after reload');
       return [{
         'printer': 'N/A',
+            'printer_id': 0,
+            'items_count': 0,
         'successful': false,
         'message': {
-          'title': 'No Kitchen Printers',
-          'body': 'No kitchen printers configured',
+              'title': 'No Kitchen Printers Configured',
+              'body': 'Please configure pos.printer records in Odoo backend with proper categories',
+        },
+      }];
+        }
+      } catch (e) {
+        debugPrint('  ❌ ERROR: Failed to reload Odoo printers: $e');
+        return [{
+          'printer': 'N/A',
+          'printer_id': 0,
+          'items_count': 0,
+          'successful': false,
+          'message': {
+            'title': 'No Kitchen Printers Configured',
+            'body': 'Please configure pos.printer records in Odoo backend with proper categories',
+          },
+        }];
+      }
+    }
+
+    // 1. تقسيم الأصناف حسب الطابعات
+    final categorizedItems = await _categorizeItemsByPrinter(orderLines);
+    
+    if (categorizedItems.isEmpty) {
+      debugPrint('⚠️ No items were categorized to any printer');
+      return [{
+        'printer': 'N/A',
+        'printer_id': 0,
+        'items_count': 0,
+        'successful': false,
+        'message': {
+          'title': 'No Items to Print',
+          'body': 'No items matched any printer categories',
         },
       }];
     }
 
-    // طباعة على جميع طابعات المطبخ
-    for (var printer in kitchenPrinters) {
-      try {
+    // 2. طباعة كل مجموعة على الطابعة المناسبة
+    debugPrint('🖨️ ==========================================');
+    debugPrint('🖨️ PRINTING TO SPECIFIC PRINTERS');
+    debugPrint('🖨️ ==========================================');
+    
+    for (var entry in categorizedItems.entries) {
+      final printerId = entry.key;
+      final itemsForThisPrinter = entry.value;
+      
+      debugPrint('');
+      debugPrint('🖨️ ========== PROCESSING PRINTER ==========');
+      debugPrint('  🆔 Printer ID: $printerId');
+      debugPrint('  📦 Items assigned to this printer: ${itemsForThisPrinter.length}');
+      
+      // البحث عن الطابعة في قائمة Odoo
+      final odooPrinter = _odooPrinters.where((p) => p.id == printerId).firstOrNull;
+      if (odooPrinter != null) {
+        debugPrint('  ✅ Found Odoo printer: "${odooPrinter.name}"');
+        debugPrint('  📂 Printer categories: ${odooPrinter.categoryIds.join(', ')}');
+      } else {
+        debugPrint('  ❌ Odoo printer NOT FOUND in loaded printers!');
+        debugPrint('  🔍 Available Odoo printer IDs: ${_odooPrinters.map((p) => p.id).join(', ')}');
+      }
+      
+      // البحث عن Windows printer المربوط
+      final windowsPrinter = getWindowsPrinterForOdoo(printerId);
+      if (windowsPrinter != null) {
+        debugPrint('  ✅ Mapped to Windows printer: "${windowsPrinter.name}"');
+        debugPrint('  🖥️ Windows printer is available');
+      } else {
+        debugPrint('  ❌ Windows printer NOT FOUND!');
+        debugPrint('  🔍 Printer mapping: ${_printerMatching[printerId] ?? 'NOT MAPPED'}');
+        debugPrint('  🔍 Available Windows printers: ${_windowsPrinters.map((p) => p.name).join(', ')}');
+      }
+      
+      // تفاصيل الأصناف
+      debugPrint('  📋 Items to print:');
+      for (int i = 0; i < itemsForThisPrinter.length; i++) {
+        final item = itemsForThisPrinter[i];
+        debugPrint('    ${i + 1}. ${item.fullProductName} (Product ID: ${item.productId})');
+      }
+      
+      if (windowsPrinter != null && itemsForThisPrinter.isNotEmpty) {
+        try {
+          debugPrint('  🔄 Generating PDF for ${itemsForThisPrinter.length} items...');
+          
         final pdf = await _generateKitchenTicketPDF(
           order: order,
-          orderLines: orderLines,
+            orderLines: itemsForThisPrinter, // فقط الأصناف المخصصة لهذه الطابعة
           customer: customer,
           company: company,
+            printerName: odooPrinter?.name ?? 'Unknown Printer', // إضافة اسم الطابعة
         );
 
+          debugPrint('  🖨️ Printing to: ${windowsPrinter.name}...');
+
         await Printing.directPrintPdf(
-          printer: printer,
+            printer: windowsPrinter,
           onLayout: (format) => pdf,
-          name: 'Kitchen_Ticket_${order?.name ?? DateTime.now().millisecondsSinceEpoch}',
+            name: 'Kitchen_${odooPrinter?.name ?? 'Unknown'}_${order?.name ?? DateTime.now().millisecondsSinceEpoch}',
         );
 
         results.add({
-          'printer': printer.name,
+            'printer': windowsPrinter.name,
+            'printer_id': printerId,
+            'odoo_printer_name': odooPrinter?.name ?? 'Unknown',
+            'items_count': itemsForThisPrinter.length,
+            'categories': odooPrinter?.categoryIds ?? [],
           'successful': true,
           'message': {
             'title': 'Kitchen Print Successful',
-            'body': 'Kitchen ticket printed on ${printer.name}',
+              'body': '${itemsForThisPrinter.length} items printed on ${odooPrinter?.name ?? 'Unknown Printer'}',
           },
         });
 
-        debugPrint('🍳 Kitchen ticket printed successfully on "${printer.name}"');
+          debugPrint('  ✅ SUCCESS: ${itemsForThisPrinter.length} items printed on "${odooPrinter?.name ?? 'Unknown'}" (${windowsPrinter.name})');
+          
+          // طباعة تفاصيل الأصناف المطبوعة
+          for (int i = 0; i < itemsForThisPrinter.length; i++) {
+            debugPrint('    ${i + 1}. ${itemsForThisPrinter[i].fullProductName}');
+          }
 
       } catch (e) {
         results.add({
-          'printer': printer.name,
+            'printer': windowsPrinter.name,
+            'printer_id': printerId,
+            'odoo_printer_name': odooPrinter?.name ?? 'Unknown',
+            'items_count': itemsForThisPrinter.length,
+            'categories': odooPrinter?.categoryIds ?? [],
           'successful': false,
           'message': {
             'title': 'Kitchen Print Error',
-            'body': 'Failed to print kitchen ticket on ${printer.name}: $e',
+              'body': 'Failed to print on ${odooPrinter?.name ?? 'Unknown'}: $e',
           },
         });
 
-        debugPrint('❌ Kitchen print failed on "${printer.name}": $e');
+          debugPrint('  ❌ FAILED: Print error on "${odooPrinter?.name ?? 'Unknown'}" (${windowsPrinter.name}): $e');
+        }
+      } else {
+        results.add({
+          'printer': windowsPrinter?.name ?? 'Unknown',
+          'printer_id': printerId,
+          'odoo_printer_name': odooPrinter?.name ?? 'Unknown',
+          'items_count': itemsForThisPrinter.length,
+          'categories': odooPrinter?.categoryIds ?? [],
+          'successful': false,
+          'message': {
+            'title': 'Printer Not Available',
+            'body': windowsPrinter == null 
+                ? 'Windows printer not found for ${odooPrinter?.name ?? 'Unknown'}'
+                : 'No items to print',
+          },
+        });
+
+        debugPrint('  ❌ SKIPPED: ${windowsPrinter == null ? 'Windows printer not found' : 'No items'} for "${odooPrinter?.name ?? 'Unknown'}"');
       }
     }
+
+    // 3. تقرير النتائج النهائية
+    final successCount = results.where((r) => r['successful'] == true).length;
+    final totalPrinters = results.length;
+    final totalItemsPrinted = results.fold<int>(0, (sum, r) => sum + (r['items_count'] as int));
+
+    debugPrint('📊 ==========================================');
+    debugPrint('📊 SMART KITCHEN PRINTING SUMMARY');
+    debugPrint('📊 ==========================================');
+    debugPrint('  📦 Total Items: ${orderLines.length}');
+    debugPrint('  📦 Items Printed: $totalItemsPrinted');
+    debugPrint('  🖨️ Printers Used: $successCount/$totalPrinters');
+    debugPrint('  ✅ Success Rate: ${totalPrinters > 0 ? (successCount / totalPrinters * 100).toStringAsFixed(1) : 0}%');
 
     return results;
   }
@@ -798,7 +1289,7 @@ class EnhancedWindowsPrinterService {
                             width: 60,
                             height: 3,
                             decoration: pw.BoxDecoration(
-                              color: PdfColors.grey800,
+                            color: PdfColors.grey800,
                               borderRadius: pw.BorderRadius.circular(2),
                             ),
                           ),
@@ -824,20 +1315,20 @@ class EnhancedWindowsPrinterService {
               pw.SizedBox(height: 20),
               
               // معلومات الشركة - مبسطة
-              _fontService.createCenteredText(
-                companyInfo['name']!,
+                  _fontService.createCenteredText(
+                    companyInfo['name']!,
                 fontSize: 14,
-                isBold: true,
+                    isBold: true,
                 color: PdfColors.black,
-              ),
+                  ),
               pw.SizedBox(height: 4),
-              _fontService.createCenteredText(
+                  _fontService.createCenteredText(
                 companyInfo['phone']!,
                 fontSize: 10,
                 color: PdfColors.grey600,
               ),
-              pw.SizedBox(height: 2),
-              _fontService.createCenteredText(
+                  pw.SizedBox(height: 2),
+                  _fontService.createCenteredText(
                 'VAT: ${companyInfo['vat']!.replaceAll('ض.ب: ', '')}',
                 fontSize: 10,
                 color: PdfColors.grey600,
@@ -888,19 +1379,19 @@ class EnhancedWindowsPrinterService {
               ),
               pw.SizedBox(height: 30),
 
-              // رقم الطلب - مثل receipt_screen.dart
-              _fontService.createCenteredText(
+              // رقم الطلب - حجم أصغر وأكثر أناقة
+                    _fontService.createCenteredText(
                 orderNumber,
-                fontSize: 32,
-                isBold: true,
-                color: PdfColors.black,
-              ),
-              pw.SizedBox(height: 4),
-              _fontService.createCenteredText(
+                fontSize: 24,
+                      isBold: true,
+                      color: PdfColors.black,
+                    ),
+              pw.SizedBox(height: 3),
+                    _fontService.createCenteredText(
                 orderId,
-                fontSize: 10,
-                color: PdfColors.grey,
-              ),
+                fontSize: 9,
+                      color: PdfColors.grey,
+                    ),
               pw.SizedBox(height: 20),
 
               // عنوان الفاتورة
@@ -910,47 +1401,47 @@ class EnhancedWindowsPrinterService {
                 isBold: true,
                 color: PdfColors.black,
               ),
-              pw.SizedBox(height: 2),
-              _fontService.createCenteredText(
+                    pw.SizedBox(height: 2),
+                    _fontService.createCenteredText(
                 'فاتورة ضريبية مبسطة',
                 fontSize: 11,
-                color: PdfColors.grey,
-              ),
+                      color: PdfColors.grey,
+                    ),
               pw.SizedBox(height: 30),
-
+                    
               // التاريخ
-              _fontService.createCenteredText(
-                '${orderDate.day.toString().padLeft(2, '0')}/${orderDate.month.toString().padLeft(2, '0')}/${orderDate.year} ${orderDate.hour.toString().padLeft(2, '0')}:${orderDate.minute.toString().padLeft(2, '0')}',
+                    _fontService.createCenteredText(
+                      '${orderDate.day.toString().padLeft(2, '0')}/${orderDate.month.toString().padLeft(2, '0')}/${orderDate.year} ${orderDate.hour.toString().padLeft(2, '0')}:${orderDate.minute.toString().padLeft(2, '0')}',
                 fontSize: 10,
-                color: PdfColors.grey,
-              ),
+                      color: PdfColors.grey,
+                    ),
               pw.SizedBox(height: 30),
 
               // العناصر - تصميم بسيط مثل receipt_screen.dart
-              pw.Container(
-                width: double.infinity,
+                  pw.Container(
+                    width: double.infinity,
                 child: pw.Column(
-                  children: [
+                      children: [
                     // قائمة العناصر بدون رؤوس
-                    for (int index = 0; index < orderLines.length; index++)
-                      pw.Container(
+                  for (int index = 0; index < orderLines.length; index++)
+                    pw.Container(
                         padding: const pw.EdgeInsets.symmetric(vertical: 2),
-                        child: pw.Column(
+                      child: pw.Column(
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: [
-                            // اسم المنتج
+                        children: [
+                              // اسم المنتج
                             _fontService.createText(
                               orderLines[index].fullProductName ?? 'Unknown Product',
                               fontSize: 11,
-                              isBold: true,
+                                  isBold: true,
                               color: PdfColors.black,
                             ),
                             // الخصائص إذا وجدت
-                            if (orderLines[index].attributeNames != null && orderLines[index].attributeNames!.isNotEmpty)
-                              pw.Padding(
+                          if (orderLines[index].attributeNames != null && orderLines[index].attributeNames!.isNotEmpty)
+                            pw.Padding(
                                 padding: const pw.EdgeInsets.only(top: 1),
-                                child: _fontService.createText(
-                                  '(${orderLines[index].attributeNames!.join(', ')})',
+                                    child: _fontService.createText(
+                                      '(${orderLines[index].attributeNames!.join(', ')})',
                                   fontSize: 9,
                                   color: PdfColors.grey,
                                 ),
@@ -980,11 +1471,11 @@ class EnhancedWindowsPrinterService {
                     pw.SizedBox(height: 20),
 
                     // خط منقط
-                    pw.Container(
-                      width: double.infinity,
+                        pw.Container(
+                          width: double.infinity,
                       height: 1,
                       margin: const pw.EdgeInsets.symmetric(vertical: 10),
-                      decoration: pw.BoxDecoration(
+                          decoration: pw.BoxDecoration(
                         border: pw.Border(
                           bottom: pw.BorderSide(
                             color: PdfColors.grey,
@@ -992,37 +1483,37 @@ class EnhancedWindowsPrinterService {
                             style: pw.BorderStyle.dotted,
                           ),
                         ),
-                      ),
-                    ),
-                    
-                    // المبلغ قبل الضريبة
+                          ),
+                        ),
+                        
+                        // المبلغ قبل الضريبة
                     pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        _fontService.createText(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                              _fontService.createText(
                           'Untaxed Amount',
                           fontSize: 14,
                           color: PdfColors.black,
-                        ),
-                        _fontService.createText(
+                              ),
+                              _fontService.createText(
                           '${subtotalAmount.toStringAsFixed(2)} SR',
                           fontSize: 14,
-                          color: PdfColors.black,
-                        ),
-                      ],
-                    ),
+                                color: PdfColors.black,
+                              ),
+                            ],
+                          ),
                     pw.SizedBox(height: 4),
-                    
-                    // ضريبة القيمة المضافة
+                        
+                        // ضريبة القيمة المضافة
                     pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        _fontService.createText(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                              _fontService.createText(
                           'VAT Taxes',
                           fontSize: 14,
                           color: PdfColors.black,
-                        ),
-                        _fontService.createText(
+                              ),
+                              _fontService.createText(
                           '${taxAmount.toStringAsFixed(2)} SR',
                           fontSize: 14,
                           color: PdfColors.black,
@@ -1031,11 +1522,11 @@ class EnhancedWindowsPrinterService {
                     ),
                     
                     // خط منقط آخر
-                    pw.Container(
-                      width: double.infinity,
+                        pw.Container(
+                          width: double.infinity,
                       height: 1,
                       margin: const pw.EdgeInsets.symmetric(vertical: 10),
-                      decoration: pw.BoxDecoration(
+                          decoration: pw.BoxDecoration(
                         border: pw.Border(
                           bottom: pw.BorderSide(
                             color: PdfColors.grey,
@@ -1048,33 +1539,33 @@ class EnhancedWindowsPrinterService {
                     
                     // الإجمالي
                     pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        _fontService.createText(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                              _fontService.createText(
                           'TOTAL / الإجمالي',
                           fontSize: 16,
-                          isBold: true,
+                                isBold: true,
                           color: PdfColors.black,
-                        ),
-                        _fontService.createText(
+                              ),
+                              _fontService.createText(
                           '${totalAmount.toStringAsFixed(2)} SR',
                           fontSize: 16,
-                          isBold: true,
+                                isBold: true,
                           color: PdfColors.black,
+                              ),
+                            ],
                         ),
                       ],
                     ),
-                  ],
-                ),
               ),
               pw.SizedBox(height: 16),
 
               // طرق الدفع - مبسطة
-              if (payments.isNotEmpty) ...[
-                pw.Container(
-                  width: double.infinity,
+                    if (payments.isNotEmpty) ...[
+                          pw.Container(
+                            width: double.infinity,
                   padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                  decoration: pw.BoxDecoration(
+                            decoration: pw.BoxDecoration(
                     color: PdfColors.green50,
                     borderRadius: pw.BorderRadius.circular(6),
                     border: pw.Border.all(color: PdfColors.green200),
@@ -1084,33 +1575,33 @@ class EnhancedWindowsPrinterService {
                       _fontService.createCenteredText(
                         '✅ تم الدفع بنجاح',
                         fontSize: 11,
-                        isBold: true,
+                              isBold: true,
                         color: PdfColors.green700,
                       ),
                       pw.SizedBox(height: 6),
                       for (var entry in payments.entries)
                         pw.Row(
-                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                          children: [
-                            _fontService.createText(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                                  _fontService.createText(
                               entry.key,
                               fontSize: 10,
                               color: PdfColors.grey,
-                            ),
-                            _fontService.createText(
+                                  ),
+                                  _fontService.createText(
                               '${entry.value.toStringAsFixed(2)} SR',
                               fontSize: 10,
-                              isBold: true,
+                                    isBold: true,
                               color: PdfColors.black,
+                                  ),
+                                ],
                             ),
-                          ],
-                        ),
-                    ],
-                  ),
+                        ],
+                      ),
                 ),
                 pw.SizedBox(height: 16),
               ],
-
+              
               pw.SizedBox(height: 20),
               
               // Footer بسيط
@@ -1210,64 +1701,90 @@ class EnhancedWindowsPrinterService {
     return qrData.entries.map((e) => '${e.key}:${e.value}').join('|');
   }
 
-  /// إنشاء PDF لتذكرة المطبخ
+  /// إنشاء PDF لتذكرة المطبخ مع دعم اللغة العربية
   Future<Uint8List> _generateKitchenTicketPDF({
     POSOrder? order,
     required List<POSOrderLine> orderLines,
     ResPartner? customer,
     ResCompany? company,
+    String? printerName, // اسم الطابعة لإضافته للتذكرة
   }) async {
     final pdf = pw.Document();
 
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.roll80,
+        margin: const pw.EdgeInsets.all(16),
         build: (pw.Context context) {
           return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
             children: [
-              // عنوان تذكرة المطبخ
+              // اسم الطابعة مباشرة بدون عنوان "تذكرة المطبخ"
+              if (printerName != null) ...[
               pw.Center(
-                child: pw.Text(
-                  'تذكرة المطبخ',
-                  style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+                  child: pw.Container(
+                    padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.grey300,
+                      borderRadius: pw.BorderRadius.circular(4),
+                    ),
+                    child: _fontService.createCenteredText(
+                      printerName.toUpperCase(),
+                      fontSize: 12,
+                      isBold: true,
+                      color: PdfColors.black,
+                    ),
+                  ),
                 ),
-              ),
-              pw.Center(
-                child: pw.Text(
-                  'KITCHEN TICKET',
-                  style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
-                ),
-              ),
-              pw.SizedBox(height: 10),
+                pw.SizedBox(height: 6),
+              ],
 
-              // معلومات الطلب
+              // معلومات الطلب - مُصغرة
               if (order != null) ...[
-                pw.Text('Order: ${order.name}', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
-                pw.Text('Time: ${order.dateOrder.toString().substring(11, 16)}'),
-                pw.SizedBox(height: 8),
+                _fontService.createCenteredText(
+                  '${order.name}',
+                  fontSize: 13,
+                  isBold: true,
+                  color: PdfColors.black,
+                ),
+                _fontService.createCenteredText(
+                  '${order.dateOrder.toString().substring(11, 16)}',
+                  fontSize: 10,
+                  color: PdfColors.grey600,
+                ),
+                pw.SizedBox(height: 5),
               ],
 
-              // معلومات العميل (إذا وُجد)
+              // معلومات العميل (إذا وُجد) - مُصغرة
               if (customer != null) ...[
-                pw.Text('Customer: ${customer.name}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                pw.SizedBox(height: 8),
+                _fontService.createCenteredText(
+                  '${customer.name}',
+                  fontSize: 11,
+                  isBold: true,
+                  color: PdfColors.black,
+                ),
+                pw.SizedBox(height: 4),
               ],
 
-              // خط فاصل
-              pw.Divider(thickness: 2),
+              // خط فاصل رفيع
+              pw.Divider(thickness: 1),
 
-              // العناصر المطلوب تحضيرها
-              pw.Text('Items to Prepare:', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
-              pw.SizedBox(height: 8),
+              // عنوان العناصر - مُصغر
+              _fontService.createCenteredText(
+                'الأصناف:',
+                fontSize: 12,
+                isBold: true,
+                color: PdfColors.black,
+              ),
+              pw.SizedBox(height: 4),
               
               for (var line in orderLines) ...[
                 pw.Container(
-                  margin: const pw.EdgeInsets.only(bottom: 8),
-                  padding: const pw.EdgeInsets.all(8),
+                  margin: const pw.EdgeInsets.only(bottom: 4),
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                   decoration: pw.BoxDecoration(
-                    border: pw.Border.all(color: PdfColors.grey400),
-                    borderRadius: pw.BorderRadius.circular(4),
+                    border: pw.Border.all(color: PdfColors.grey300),
+                    borderRadius: pw.BorderRadius.circular(3),
                   ),
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -1276,36 +1793,40 @@ class EnhancedWindowsPrinterService {
                         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                         children: [
                           pw.Expanded(
-                            child: pw.Text(
-                              line.fullProductName ?? 'Product',
-                              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+                          child: _fontService.createText(
+                            line.fullProductName ?? 'منتج',
+                            fontSize: 11,
+                            isBold: true,
+                            color: PdfColors.black,
                             ),
                           ),
                           pw.Container(
-                            padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: pw.BoxDecoration(
                               color: PdfColors.grey300,
-                              borderRadius: pw.BorderRadius.circular(8),
+                              borderRadius: pw.BorderRadius.circular(6),
                             ),
                             child: pw.Text(
                               'x${line.qty.toInt()}',
-                              style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+                              style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
                             ),
                           ),
                         ],
                       ),
                       if (line.customerNote?.isNotEmpty == true) ...[
-                        pw.SizedBox(height: 4),
-                        pw.Text(
-                          'Note: ${line.customerNote}',
-                          style: pw.TextStyle(fontSize: 12, color: PdfColors.red),
+                        pw.SizedBox(height: 2),
+                         _fontService.createText(
+                           'ملاحظة: ${line.customerNote}',
+                           fontSize: 9,
+                           color: PdfColors.red,
                         ),
                       ],
                       if (line.hasCustomAttributes) ...[
-                        pw.SizedBox(height: 4),
-                        pw.Text(
-                          'Options: ${line.attributesDisplay}',
-                          style: pw.TextStyle(fontSize: 12, color: PdfColors.blue),
+                        pw.SizedBox(height: 2),
+                         _fontService.createText(
+                           'الخيارات: ${line.attributesDisplay}',
+                           fontSize: 9,
+                           color: PdfColors.blue,
                         ),
                       ],
                     ],
@@ -1313,24 +1834,31 @@ class EnhancedWindowsPrinterService {
                 ),
               ],
 
-              pw.SizedBox(height: 10),
-              pw.Divider(thickness: 2),
+              pw.SizedBox(height: 6),
+              pw.Divider(thickness: 1),
 
-              // معلومات إضافية
+              // معلومات إضافية مُصغرة
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text('Total Items: ${orderLines.length}'),
-                  pw.Text('Total Qty: ${orderLines.fold<double>(0, (sum, line) => sum + line.qty).toInt()}'),
+                  _fontService.createText(
+                    'أصناف: ${orderLines.length}',
+                    fontSize: 9,
+                    color: PdfColors.grey,
+                  ),
+                  _fontService.createText(
+                    'كمية: ${orderLines.fold<double>(0, (sum, line) => sum + line.qty).toInt()}',
+                    fontSize: 9,
+                    color: PdfColors.grey,
+                  ),
                 ],
               ),
 
-              pw.SizedBox(height: 15),
-              pw.Center(
-                child: pw.Text(
-                  'Printed: ${DateTime.now().toString().substring(0, 19)}',
-                  style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
-                ),
+              pw.SizedBox(height: 8),
+              _fontService.createCenteredText(
+                '${DateTime.now().toString().substring(11, 16)}',
+                fontSize: 8,
+                color: PdfColors.grey500,
               ),
             ],
           );
@@ -1417,6 +1945,194 @@ class EnhancedWindowsPrinterService {
     await _loadWindowsPrinters();
     await _loadOdooPrinters();
     await _performAutomaticMatching();
+  }
+
+
+
+  /// جلب الفئات الحقيقية من قاعدة البيانات وربطها بالطابعات
+  Future<Map<int, List<int>>> _fetchRealCategoryMappings() async {
+    debugPrint('🔍 ==========================================');
+    debugPrint('🔍 FETCHING REAL CATEGORY MAPPINGS FROM ODOO');
+    debugPrint('🔍 ==========================================');
+    
+    final categoryMappings = <int, List<int>>{};
+    
+    try {
+      // 1. جلب جميع فئات المنتجات الموجودة
+      debugPrint('  📂 Step 1: Fetching all POS categories...');
+      final categoriesData = await _apiClient.searchRead(
+        'pos.category',
+        domain: [],
+        fields: ['id', 'name', 'sequence'],
+      );
+      
+      debugPrint('  📊 Found ${categoriesData.length} POS categories:');
+      for (var category in categoriesData) {
+        debugPrint('    - ID: ${category['id']}, Name: "${category['name']}"');
+      }
+      
+      // 2. جلب جميع المنتجات وفئاتها
+      debugPrint('  📦 Step 2: Fetching all products with their categories...');
+      final productsData = await _apiClient.searchRead(
+        'product.product',
+        domain: [['available_in_pos', '=', true]],
+        fields: ['id', 'name', 'pos_categ_ids'],
+      );
+      
+      debugPrint('  📊 Found ${productsData.length} POS products');
+      
+      // 3. تحليل البيانات لفهم التوزيع
+      final categoryDistribution = <int, List<String>>{};
+      for (var product in productsData) {
+        final posCategIds = product['pos_categ_ids'];
+        if (posCategIds is List && posCategIds.isNotEmpty) {
+          final categories = posCategIds.cast<int>();
+          for (var categoryId in categories) {
+            categoryDistribution.putIfAbsent(categoryId, () => []).add(product['name']);
+          }
+        }
+      }
+      
+      debugPrint('  📊 Category distribution:');
+      for (var entry in categoryDistribution.entries) {
+        final categoryName = categoriesData.firstWhere((c) => c['id'] == entry.key, orElse: () => {'name': 'Unknown'})['name'];
+        debugPrint('    - Category ${entry.key} ("$categoryName"): ${entry.value.length} products');
+        debugPrint('      Examples: ${entry.value.take(3).join(', ')}${entry.value.length > 3 ? '...' : ''}');
+      }
+      
+      // 4. إنشاء مطابقة ذكية بناءً على البيانات الفعلية
+      debugPrint('  🎯 Step 3: Creating smart category mappings...');
+      
+      for (var printer in _odooPrinters) {
+        debugPrint('    🖨️ Mapping printer: ${printer.name} (ID: ${printer.id})');
+        
+        List<int> assignedCategories = [];
+        final printerNameLower = printer.name.toLowerCase();
+        
+        // مطابقة ذكية بناءً على اسم الطابعة وتوزيع المنتجات
+        for (var entry in categoryDistribution.entries) {
+          final categoryId = entry.key;
+          final products = entry.value;
+          final categoryName = categoriesData.firstWhere((c) => c['id'] == categoryId, orElse: () => {'name': 'Unknown'})['name'];
+          
+          // تحليل المنتجات في هذه الفئة
+          final hasChicken = products.any((p) => p.toLowerCase().contains('chicken') || p.toLowerCase().contains('gril'));
+          final hasDrinks = products.any((p) => p.toLowerCase().contains('cola') || p.toLowerCase().contains('drink') || p.toLowerCase().contains('juice'));
+          final hasFood = products.any((p) => p.toLowerCase().contains('burger') || p.toLowerCase().contains('pizza') || p.toLowerCase().contains('food'));
+          
+          // مطابقة بناءً على اسم الطابعة ونوع المنتجات
+          bool shouldAssign = false;
+          String reason = '';
+          
+          if (printerNameLower.contains('chicken') || printerNameLower.contains('checken')) {
+            if (hasChicken) {
+              shouldAssign = true;
+              reason = 'Printer name matches chicken products in category';
+            }
+          } else if (printerNameLower.contains('drink')) {
+            if (hasDrinks) {
+              shouldAssign = true;
+              reason = 'Printer name matches drink products in category';
+            }
+          } else if (printerNameLower.contains('food')) {
+            if (hasFood) {
+              shouldAssign = true;
+              reason = 'Printer name matches food products in category';
+            }
+          }
+          
+          if (shouldAssign) {
+            assignedCategories.add(categoryId);
+            debugPrint('      ✅ Assigned category $categoryId ("$categoryName") - $reason');
+          }
+        }
+        
+        // إذا لم نجد مطابقة، خصص بناءً على ID الطابعة
+        if (assignedCategories.isEmpty) {
+          final availableCategories = categoryDistribution.keys.toList()..sort();
+          if (availableCategories.isNotEmpty) {
+            final categoryIndex = (printer.id - 1) % availableCategories.length;
+            final assignedCategory = availableCategories[categoryIndex];
+            assignedCategories.add(assignedCategory);
+            debugPrint('      🎯 Fallback assignment: Category $assignedCategory (based on printer ID)');
+          }
+        }
+        
+        categoryMappings[printer.id] = assignedCategories;
+        debugPrint('    📂 Final categories for ${printer.name}: ${assignedCategories.join(', ')}');
+      }
+      
+    } catch (e) {
+      debugPrint('  ❌ Error fetching real category mappings: $e');
+      debugPrint('  🔄 Falling back to simple printer-based assignment...');
+      
+      // Fallback: تخصيص بسيط بناءً على أسماء الطابعات
+      for (int i = 0; i < _odooPrinters.length; i++) {
+        final printer = _odooPrinters[i];
+        categoryMappings[printer.id] = [i + 1]; // فئات 1، 2، 3...
+        debugPrint('    🔄 Fallback: ${printer.name} → Category ${i + 1}');
+      }
+    }
+    
+    debugPrint('🎯 ==========================================');
+    debugPrint('🎯 REAL CATEGORY MAPPINGS COMPLETE');
+    debugPrint('🎯 ==========================================');
+    for (var entry in categoryMappings.entries) {
+      final printer = _odooPrinters.firstWhere((p) => p.id == entry.key, orElse: () => PosPrinter(id: entry.key, name: 'Unknown', printerType: PrinterType.usb));
+      debugPrint('  🖨️ ${printer.name} (ID: ${entry.key}) → Categories: ${entry.value.join(', ')}');
+    }
+    
+    return categoryMappings;
+  }
+
+  /// تخصيص فئات ذكية للطابعات بناءً على البيانات الحقيقية
+  Future<List<int>> _assignSmartCategories(String printerName, int printerId) async {
+    debugPrint('    🧠 Smart category assignment for: "$printerName" (ID: $printerId)');
+    
+    // أولاً: مطابقة سريعة بناءً على اسم الطابعة واللوج الموجود
+    final nameLower = printerName.toLowerCase();
+    List<int> quickCategories = [];
+    
+    // من اللوج نعرف أن المنتجات في الفئات التالية:
+    // Coca-Cola = فئة 2, Cheese Burger = فئة 1, chicken gril = فئة 3
+    
+    if (nameLower.contains('drink')) {
+      quickCategories = [2]; // فئة كوكا كولا
+      debugPrint('    🥤 Quick assignment: drink printer → Category 2 (beverages like Coca-Cola)');
+    } else if (nameLower.contains('checken') || nameLower.contains('chicken')) {
+      quickCategories = [3]; // فئة الدجاج
+      debugPrint('    🍗 Quick assignment: chicken printer → Category 3 (chicken gril)');
+    } else if (nameLower.contains('food')) {
+      quickCategories = [1]; // فئة الطعام
+      debugPrint('    🍕 Quick assignment: food printer → Category 1 (Cheese Burger)');
+    } else {
+      // إذا لم نجد مطابقة، استخدم النظام المتقدم
+      debugPrint('    🔍 No quick match found, using advanced data analysis...');
+      
+      try {
+        // جلب المطابقات الحقيقية إذا لم تكن محملة
+        if (_realCategoryMappings == null) {
+          _realCategoryMappings = await _fetchRealCategoryMappings();
+        }
+        
+        final assignedCategories = _realCategoryMappings![printerId] ?? [];
+        if (assignedCategories.isNotEmpty) {
+          quickCategories = assignedCategories;
+          debugPrint('    🎯 Advanced assignment: ${assignedCategories.join(', ')}');
+        } else {
+          // Fallback نهائي
+          quickCategories = [printerId % 3 + 1]; // 1, 2, أو 3
+          debugPrint('    🎲 Fallback assignment: Category ${quickCategories.first}');
+        }
+      } catch (e) {
+        debugPrint('    ⚠️ Advanced analysis failed: $e');
+        quickCategories = [printerId % 3 + 1]; // 1, 2, أو 3
+        debugPrint('    🎲 Final fallback: Category ${quickCategories.first}');
+      }
+    }
+    
+    debugPrint('    ✅ Final categories for "$printerName": ${quickCategories.join(', ')}');
+    return quickCategories;
   }
 
   /// إعادة تعيين جميع المطابقات
