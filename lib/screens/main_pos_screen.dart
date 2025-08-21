@@ -278,37 +278,38 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isCombo ? Colors.orange : AppTheme.borderColor,
+            color: isCombo ? Colors.orange.withOpacity(0.6) : Colors.grey.withOpacity(0.2),
             width: isCombo ? 2 : 1,
           ),
           boxShadow: [
             BoxShadow(
               color: isCombo 
-                ? Colors.orange.withOpacity(0.2)
-                : Colors.black.withOpacity(0.05),
-              blurRadius: isCombo ? 8 : 4,
-              offset: const Offset(0, 2),
+                ? Colors.orange.withOpacity(0.15)
+                : Colors.black.withOpacity(0.08),
+              blurRadius: isCombo ? 12 : 8,
+              offset: const Offset(0, 4),
+              spreadRadius: 0,
             ),
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Product image
+            // Product image with improved styling
             Expanded(
-              flex: 3,
+              flex: 4,
               child: Stack(
                 children: [
                   Container(
                     decoration: BoxDecoration(
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                      color: Colors.grey[100],
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                      color: Colors.grey[50],
                     ),
                     child: product.image128 != null && product.image128!.isNotEmpty
                         ? ClipRRect(
-                            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                             child: Image.memory(
                               base64Decode(product.image128!),
                               fit: BoxFit.cover,
@@ -319,12 +320,12 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                                   width: double.infinity,
                                   height: double.infinity,
                                   decoration: BoxDecoration(
-                                    color: Colors.grey[200],
-                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                                    color: Colors.grey[100],
+                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                                   ),
                                   child: Icon(
                                     Icons.fastfood,
-                                    size: 48,
+                                    size: 36,
                                     color: Colors.grey[400],
                                   ),
                                 );
@@ -335,31 +336,35 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                             width: double.infinity,
                             height: double.infinity,
                             decoration: BoxDecoration(
-                              color: Colors.grey[200],
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                              color: Colors.grey[100],
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                             ),
                             child: Icon(
                               Icons.fastfood,
-                              size: 48,
+                              size: 36,
                               color: Colors.grey[400],
                             ),
                           ),
                   ),
                   
-                  // Combo indicator
+                  // Combo indicator with improved design
                   if (isCombo)
                     Positioned(
-                      top: 8,
-                      left: 8,
+                      top: 6,
+                      left: 6,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                         decoration: BoxDecoration(
-                          color: Colors.orange,
-                          borderRadius: BorderRadius.circular(12),
+                          gradient: LinearGradient(
+                            colors: [Colors.orange, Colors.orange.shade700],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(10),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.orange.withOpacity(0.3),
-                              blurRadius: 4,
+                              color: Colors.orange.withOpacity(0.4),
+                              blurRadius: 6,
                               offset: const Offset(0, 2),
                             ),
                           ],
@@ -369,16 +374,17 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                           children: [
                             const Icon(
                               Icons.dining,
-                              size: 12,
+                              size: 10,
                               color: Colors.white,
                             ),
-                            const SizedBox(width: 4),
+                            const SizedBox(width: 3),
                             const Text(
                               'COMBO',
                               style: TextStyle(
                                 color: Colors.white,
-                                fontSize: 10,
+                                fontSize: 8,
                                 fontWeight: FontWeight.bold,
+                                letterSpacing: 0.5,
                               ),
                             ),
                           ],
@@ -386,28 +392,28 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                       ),
                     ),
                   
-                  // Information icon
+                  // Information icon with improved styling
                   Positioned(
-                    top: 8,
-                    right: 8,
+                    top: 6,
+                    right: 6,
                     child: GestureDetector(
                       onTap: onInfoTap,
                       child: Container(
-                        padding: const EdgeInsets.all(4),
+                        padding: const EdgeInsets.all(3),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.9),
+                          color: Colors.white.withOpacity(0.95),
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
-                              blurRadius: 4,
+                              color: Colors.black.withOpacity(0.15),
+                              blurRadius: 6,
                               offset: const Offset(0, 2),
                             ),
                           ],
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.info_outline,
-                          size: 16,
+                          size: 14,
                           color: AppTheme.primaryColor,
                         ),
                       ),
@@ -417,34 +423,54 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
               ),
             ),
             
-            // Product details
+            // Product details with improved layout
             Expanded(
-              flex: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
+              flex: 3,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Product name
-                    Text(
-                      product.displayName,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                        color: isCombo ? Colors.orange[800] : Colors.black87,
+                    // Product name with better typography
+                    Expanded(
+                      child: Text(
+                        product.displayName,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: isCombo ? Colors.orange[800] : Colors.black87,
+                          height: 1.2,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                    const Spacer(),
                     
-                    // Price
-                    Text(
-                      currencyFormat.format(product.lstPrice),
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: isCombo ? Colors.orange[700] : AppTheme.primaryColor,
+                    const SizedBox(height: 4),
+                    
+                    // Price with improved styling
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: isCombo 
+                            ? Colors.orange.withOpacity(0.1)
+                            : AppTheme.primaryColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isCombo 
+                              ? Colors.orange.withOpacity(0.3)
+                              : AppTheme.primaryColor.withOpacity(0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: Text(
+                        currencyFormat.format(product.lstPrice),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: isCombo ? Colors.orange[700] : AppTheme.primaryColor,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
                     ),
                   ],
@@ -673,13 +699,43 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
             child: Column(
               children: [
                 // Search bar
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
+                Container(
+                  margin: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.08),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                        spreadRadius: 0,
+                      ),
+                    ],
+                  ),
                   child: TextField(
                     controller: _searchController,
-                    decoration: const InputDecoration(
-                      hintText: 'Search products...',
-                      prefixIcon: Icon(Icons.search),
+                    decoration: InputDecoration(
+                      hintText: '🔍 البحث عن المنتجات...',
+                      hintStyle: TextStyle(
+                        color: Colors.grey[500],
+                        fontSize: 16,
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: AppTheme.primaryColor,
+                        size: 24,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: Colors.transparent,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 16,
+                      ),
                     ),
                     onChanged: (value) {
                       setState(() {
@@ -695,8 +751,8 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                     final categories = ['الكل', ...posProvider.categories.map((cat) => cat.name)];
                     
                     return Container(
-                      height: 50,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      height: 60,
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: ListView.builder(
                         scrollDirection: Axis.horizontal,
                         itemCount: categories.length,
@@ -705,10 +761,16 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                           final isSelected = posProvider.selectedCategoryName == category ||
                               (posProvider.selectedCategoryName.isEmpty && category == 'الكل');
                           
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 8),
+                          return Container(
+                            margin: const EdgeInsets.only(right: 12),
                             child: ChoiceChip(
-                              label: Text(category),
+                              label: Text(
+                                category,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                ),
+                              ),
                               selected: isSelected,
                               onSelected: (selected) {
                                 if (selected) {
@@ -722,10 +784,24 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                                 }
                               },
                               selectedColor: AppTheme.primaryColor.withOpacity(0.2),
+                              backgroundColor: Colors.grey[100],
                               labelStyle: TextStyle(
                                 color: isSelected ? AppTheme.primaryColor : Colors.grey[700],
-                                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                               ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                                side: BorderSide(
+                                  color: isSelected 
+                                      ? AppTheme.primaryColor.withOpacity(0.5)
+                                      : Colors.grey.withOpacity(0.3),
+                                  width: 1.5,
+                                ),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              elevation: isSelected ? 4 : 1,
+                              shadowColor: isSelected 
+                                  ? AppTheme.primaryColor.withOpacity(0.3)
+                                  : Colors.black.withOpacity(0.1),
                             ),
                           );
                         },
@@ -752,34 +828,34 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
 
                       if (products.isEmpty) {
                         return const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
                                 Icons.inventory_2_outlined,
-                    size: 64,
+                                size: 64,
                                 color: Colors.grey,
-                  ),
+                              ),
                               SizedBox(height: 16),
-                  Text(
+                              Text(
                                 'لا توجد منتجات',
                                 style: TextStyle(
                                   fontSize: 18,
                                   color: Colors.grey,
                                 ),
-                  ),
-                ],
-              ),
-            );
-          }
+                              ),
+                            ],
+                          ),
+                        );
+                      }
 
                       return GridView.builder(
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(20),
                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          childAspectRatio: 0.8,
-                          crossAxisSpacing: 16,
-                          mainAxisSpacing: 16,
+                          crossAxisCount: 5,
+                          childAspectRatio: 0.75,
+                          crossAxisSpacing: 20,
+                          mainAxisSpacing: 20,
                         ),
                         itemCount: products.length,
                         itemBuilder: (context, index) {
@@ -801,12 +877,23 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
 
           // Right sidebar
           Container(
-            width: 400,
-            decoration: const BoxDecoration(
+            width: 420,
+            decoration: BoxDecoration(
               color: Colors.white,
               border: Border(
-                left: BorderSide(color: AppTheme.borderColor),
+                left: BorderSide(
+                  color: Colors.grey.withOpacity(0.2),
+                  width: 1,
+                ),
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 20,
+                  offset: const Offset(-5, 0),
+                  spreadRadius: 0,
+                ),
+              ],
             ),
             child: Column(
               children: [
@@ -821,36 +908,42 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                   builder: (context, posProvider, _) {
                     final selectedCustomer = posProvider.selectedCustomer;
                     return Container(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Customer display
                           Container(
                             width: double.infinity,
-                            padding: const EdgeInsets.all(12),
+                            padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
                               color: selectedCustomer != null 
-                                  ? AppTheme.primaryColor.withOpacity(0.1)
-                                  : Colors.grey.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
+                                  ? AppTheme.primaryColor.withOpacity(0.08)
+                                  : Colors.grey.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(16),
                               border: Border.all(
                                 color: selectedCustomer != null 
-                                    ? AppTheme.primaryColor.withOpacity(0.3)
-                                    : Colors.grey.withOpacity(0.3),
+                                    ? AppTheme.primaryColor.withOpacity(0.2)
+                                    : Colors.grey.withOpacity(0.2),
+                                width: 1.5,
                               ),
                             ),
                             child: Row(
                               children: [
-                                CircleAvatar(
-                                  radius: 16,
-                                  backgroundColor: selectedCustomer != null 
-                                      ? AppTheme.primaryColor
-                                      : Colors.grey,
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: selectedCustomer != null 
+                                        ? AppTheme.primaryColor.withOpacity(0.1)
+                                        : Colors.grey.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                   child: Icon(
                                     Icons.person,
-                                    size: 18,
-                                    color: Colors.white,
+                                    size: 20,
+                                    color: selectedCustomer != null 
+                                        ? AppTheme.primaryColor
+                                        : Colors.grey[600],
                                   ),
                                 ),
                                 const SizedBox(width: 12),
@@ -869,7 +962,7 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                                         ),
                                       ),
                                       if (selectedCustomer?.phone != null) ...[
-                                        const SizedBox(height: 2),
+                                        const SizedBox(height: 4),
                                         Text(
                                           selectedCustomer!.phone!,
                                           style: TextStyle(
@@ -882,16 +975,26 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                                   ),
                                 ),
                                 if (selectedCustomer != null)
-                                  IconButton(
-                                    onPressed: () {
-                                      posProvider.clearSelectedCustomer();
-                                    },
-                                    icon: Icon(
-                                      Icons.close,
-                                      size: 18,
-                                      color: Colors.grey[600],
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
                                     ),
-                                    tooltip: 'إلغاء اختيار العميل',
+                                    child: IconButton(
+                                      onPressed: () {
+                                        posProvider.clearSelectedCustomer();
+                                      },
+                                      icon: Icon(
+                                        Icons.close,
+                                        size: 18,
+                                        color: Colors.red[600],
+                                      ),
+                                      tooltip: 'إلغاء اختيار العميل',
+                                      constraints: const BoxConstraints(
+                                        minWidth: 32,
+                                        minHeight: 32,
+                                      ),
+                                    ),
                                   ),
                               ],
                             ),
@@ -904,48 +1007,80 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
 
                 // Customer and Actions buttons
                 Container(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  margin: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                   child: Row(
                     children: [
                       Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => _selectCustomer(context),
-                          icon: const Icon(
-                            Icons.person_search,
-                            size: 18,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppTheme.primaryColor.withOpacity(0.2),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
                           ),
-                          label: const Text(
-                            'اختيار العميل',
-                            style: TextStyle(fontSize: 14),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            side: BorderSide(color: AppTheme.primaryColor.withOpacity(0.3)),
-                            foregroundColor: AppTheme.primaryColor,
+                          child: OutlinedButton.icon(
+                            onPressed: () => _selectCustomer(context),
+                            icon: const Icon(
+                              Icons.person_search,
+                              size: 18,
+                            ),
+                            label: const Text(
+                              'اختيار العميل',
+                              style: TextStyle(fontSize: 14),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              side: BorderSide(color: AppTheme.primaryColor.withOpacity(0.3)),
+                              foregroundColor: AppTheme.primaryColor,
+                              backgroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 12),
                       Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () {
-                            showDialog(
-                              context: context,
-                              builder: (context) => const ActionsMenuDialog(),
-                            );
-                          },
-                          icon: const Icon(
-                            Icons.more_horiz,
-                            size: 18,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppTheme.primaryColor.withOpacity(0.2),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
                           ),
-                          label: const Text(
-                            'الإجراءات',
-                            style: TextStyle(fontSize: 14),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            side: BorderSide(color: AppTheme.primaryColor.withOpacity(0.3)),
-                            foregroundColor: AppTheme.primaryColor,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              showDialog(
+                                context: context,
+                                builder: (context) => const ActionsMenuDialog(),
+                              );
+                            },
+                            icon: const Icon(
+                              Icons.more_horiz,
+                              size: 18,
+                            ),
+                            label: const Text(
+                              'الإجراءات',
+                              style: TextStyle(fontSize: 14),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              side: BorderSide(color: AppTheme.primaryColor.withOpacity(0.3)),
+                              foregroundColor: AppTheme.primaryColor,
+                              backgroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -955,13 +1090,13 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
 
                 // Numpad
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   child: const NumpadWidget(),
                 ),
 
-                                // Payment button
+                // Payment button
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  margin: const EdgeInsets.fromLTRB(16, 0, 16, 20),
                   width: double.infinity,
                   child: Consumer<EnhancedPOSProvider>(
                     builder: (context, posProvider, _) {
@@ -969,7 +1104,7 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                       final currencyFormat = NumberFormat.currency(symbol: 'ر.س ');
                       
                       return Container(
-                        height: 60,
+                        height: 70,
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: hasItems 
@@ -978,12 +1113,12 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(16),
                           boxShadow: hasItems ? [
                             BoxShadow(
-                              color: AppTheme.primaryColor.withOpacity(0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 4),
+                              color: AppTheme.primaryColor.withOpacity(0.4),
+                              blurRadius: 12,
+                              offset: const Offset(0, 6),
                             ),
                           ] : null,
                         ),
@@ -1002,7 +1137,7 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                             backgroundColor: Colors.transparent,
                             shadowColor: Colors.transparent,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(16),
                             ),
                             padding: const EdgeInsets.symmetric(horizontal: 24),
                           ),
@@ -1012,9 +1147,9 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                               const Icon(
                                 Icons.payment,
                                 color: Colors.white,
-                                size: 24,
+                                size: 26,
                               ),
-                              const SizedBox(width: 12),
+                              const SizedBox(width: 14),
                               Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1042,7 +1177,7 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                               const Icon(
                                 Icons.arrow_forward_ios,
                                 color: Colors.white,
-                                size: 16,
+                                size: 18,
                               ),
                             ],
                           ),
@@ -1257,37 +1392,86 @@ class OrderSummary extends StatelessWidget {
         final orderLines = posProvider.orderLines;
 
         return Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header
-              Text(
-                'ملخص الطلب',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
+              // Header with improved styling
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppTheme.primaryColor.withOpacity(0.2),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.shopping_cart,
+                      color: AppTheme.primaryColor,
+                      size: 24,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'ملخص الطلب',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.primaryColor,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
 
               // Order items
               Expanded(
                 child: orderLines.isEmpty
-                    ? Center(
+                    ? Container(
+                        margin: const EdgeInsets.all(20),
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.grey.withOpacity(0.2),
+                            width: 1,
+                          ),
+                        ),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                              Icons.shopping_cart_outlined,
-                              size: 48,
-                              color: Colors.grey[400],
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Icon(
+                                Icons.shopping_cart_outlined,
+                                size: 48,
+                                color: Colors.grey[500],
+                              ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 16),
                             Text(
                               'لا توجد عناصر في الطلب',
                               style: TextStyle(
                                 color: Colors.grey[600],
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'قم بإضافة منتجات من القائمة',
+                              style: TextStyle(
+                                color: Colors.grey[500],
                                 fontSize: 14,
                               ),
                               textAlign: TextAlign.center,
@@ -1299,52 +1483,99 @@ class OrderSummary extends StatelessWidget {
                         itemCount: orderLines.length,
                         itemBuilder: (context, index) {
                           final orderLine = orderLines[index];
-                          return OrderItemCard(
-                            orderLine: orderLine,
-                            onRemove: () => posProvider.removeOrderLine(index),
-                            onQuantityChanged: (quantity) =>
-                                posProvider.updateOrderLineQuantity(index, quantity),
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: OrderItemCard(
+                              orderLine: orderLine,
+                              onRemove: () => posProvider.removeOrderLine(index),
+                              onQuantityChanged: (quantity) =>
+                                  posProvider.updateOrderLineQuantity(index, quantity),
+                            ),
                           );
                         },
                       ),
               ),
 
-              // Order totals
+              // Order totals with improved styling
               if (orderLines.isNotEmpty) ...[
-                const Divider(),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('المجموع الفرعي:'),
-                    Text(currencyFormat.format(posProvider.subtotal)),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('الضرائب:'),
-                    Text(currencyFormat.format(posProvider.taxAmount)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'الإجمالي:',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                Container(
+                  margin: const EdgeInsets.only(top: 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.grey.withOpacity(0.2),
+                      width: 1,
                     ),
-                    Text(
-                      currencyFormat.format(posProvider.total),
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: AppTheme.primaryColor,
-                        fontWeight: FontWeight.bold,
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'المجموع الفرعي:',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[700],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            currencyFormat.format(posProvider.subtotal),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[700],
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'الضرائب:',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[700],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            currencyFormat.format(posProvider.taxAmount),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[700],
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 24),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'الإجمالي:',
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.primaryColor,
+                            ),
+                          ),
+                          Text(
+                            currencyFormat.format(posProvider.total),
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              color: AppTheme.primaryColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ],
@@ -1371,52 +1602,53 @@ class OrderItemCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final currencyFormat = NumberFormat.currency(symbol: 'ر.س ');
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      elevation: 1,
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.grey.withOpacity(0.2),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+            spreadRadius: 0,
+          ),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
           children: [
-            // Product info
+            // Product info section
             Expanded(
+              flex: 3,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Product name with attributes
+                  // Product name (compact)
                   Text(
                     orderLine.displayNameWithAttributes,
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
-                      fontSize: 14,
+                      fontSize: 13,
+                      height: 1.2,
                     ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  // Show attributes separately if they exist
-                  if (orderLine.hasCustomAttributes) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      orderLine.attributesDisplay,
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 12,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ],
+                  
                   const SizedBox(height: 4),
+                  
+                  // Price per unit (compact)
                   Text(
                     '${currencyFormat.format(orderLine.priceUnit ?? 0)} / وحدة',
                     style: TextStyle(
                       color: Colors.grey[600],
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'الإجمالي: ${currencyFormat.format(orderLine.priceSubtotal ?? 0)}',
-                    style: TextStyle(
-                      color: AppTheme.primaryColor,
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -1424,61 +1656,155 @@ class OrderItemCard extends StatelessWidget {
               ),
             ),
 
-            // Quantity controls
-            Row(
-              children: [
-                IconButton(
-                  onPressed: () {
-                    final newQty = (orderLine.qty ?? 1) - 1;
-                    if (newQty > 0) {
-                      onQuantityChanged(newQty);
-                    }
-                  },
-                  icon: Icon(
-                    Icons.remove_circle_outline,
-                    color: AppTheme.primaryColor,
-                  ),
-                  constraints: const BoxConstraints(
-                    minWidth: 32,
-                    minHeight: 32,
-                  ),
+            // Quantity controls (compact)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Colors.grey.withOpacity(0.2),
+                  width: 1,
                 ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Decrease button
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.1),
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(8),
+                        bottomLeft: Radius.circular(8),
+                      ),
+                    ),
+                    child: IconButton(
+                      onPressed: () {
+                        final newQty = (orderLine.qty ?? 1) - 1;
+                        if (newQty > 0) {
+                          onQuantityChanged(newQty);
+                        }
+                      },
+                      icon: Icon(
+                        Icons.remove,
+                        color: Colors.red[600],
+                        size: 16,
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 28,
+                        minHeight: 28,
+                      ),
+                      padding: EdgeInsets.zero,
+                    ),
+                  ),
+                  
+                  // Quantity display
+                  Container(
+                    width: 36,
+                    height: 28,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border.symmetric(
+                        horizontal: BorderSide(
+                          color: Colors.grey.withOpacity(0.2),
+                          width: 1,
+                        ),
+                      ),
+                    ),
+                    child: Text(
+                      (orderLine.qty ?? 1).toStringAsFixed(0),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  
+                  // Increase button
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.1),
+                      borderRadius: const BorderRadius.only(
+                        topRight: Radius.circular(8),
+                        bottomRight: Radius.circular(8),
+                      ),
+                    ),
+                    child: IconButton(
+                      onPressed: () {
+                        final newQty = (orderLine.qty ?? 1) + 1;
+                        onQuantityChanged(newQty);
+                      },
+                      icon: Icon(
+                        Icons.add,
+                        color: Colors.green[600],
+                        size: 16,
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 28,
+                        minHeight: 28,
+                      ),
+                      padding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Total price and remove button
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // Total price
                 Container(
-                  width: 40,
-                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppTheme.primaryColor.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
                   child: Text(
-                    (orderLine.qty ?? 1).toStringAsFixed(0),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
+                    currencyFormat.format(orderLine.priceSubtotal ?? 0),
+                    style: TextStyle(
+                      color: AppTheme.primaryColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
-                IconButton(
-                  onPressed: () {
-                    final newQty = (orderLine.qty ?? 1) + 1;
-                    onQuantityChanged(newQty);
-                  },
-                  icon: Icon(
-                    Icons.add_circle_outline,
-                    color: AppTheme.primaryColor,
+                
+                const SizedBox(height: 6),
+                
+                // Remove button
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Colors.red.withOpacity(0.2),
+                      width: 1,
+                    ),
                   ),
-                  constraints: const BoxConstraints(
-                    minWidth: 32,
-                    minHeight: 32,
+                  child: IconButton(
+                    onPressed: onRemove,
+                    icon: Icon(
+                      Icons.close,
+                      color: Colors.red[600],
+                      size: 16,
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 28,
+                      minHeight: 28,
+                    ),
+                    tooltip: 'حذف العنصر',
+                    padding: EdgeInsets.zero,
                   ),
                 ),
               ],
-            ),
-
-            // Remove button
-            IconButton(
-              onPressed: onRemove,
-              icon: const Icon(Icons.delete_outline, color: Colors.red),
-              constraints: const BoxConstraints(
-                minWidth: 32,
-                minHeight: 32,
-              ),
             ),
           ],
         ),
