@@ -127,59 +127,108 @@ class _ComboSelectionPopupState extends State<ComboSelectionPopup> {
     return Dialog(
       backgroundColor: Colors.transparent,
       child: Container(
-        width: MediaQuery.of(context).size.width * 0.75, // تصغير العرض
-        height: MediaQuery.of(context).size.height * 0.7, // تصغير الارتفاع
+        width: MediaQuery.of(context).size.width * 0.65, // تصغير أكثر
+        height: MediaQuery.of(context).size.height * 0.6, // تصغير أكثر
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(20), // زوايا أكثر انسيابية
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+              color: Colors.black.withOpacity(0.15),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+              spreadRadius: 0,
             ),
           ],
         ),
         child: Column(
           children: [
-            // Header
+            // Header with improved design
             Container(
-              padding: const EdgeInsets.all(16), // تقليل padding
-              decoration: const BoxDecoration(
-                color: AppTheme.primaryColor,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(10),
-                  topRight: Radius.circular(10),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [AppTheme.primaryColor, AppTheme.primaryColor.withOpacity(0.8)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.primaryColor.withOpacity(0.3),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
               child: Row(
                 children: [
-                  Expanded(
-                    child: Text(
-                      widget.combo.name,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18, // تصغير حجم العنوان
-                        fontWeight: FontWeight.bold,
-                      ),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.dining,
+                      color: Colors.white,
+                      size: 24,
                     ),
                   ),
-                  IconButton(
-                    onPressed: _handleCancel,
-                    icon: const Icon(
-                      Icons.close,
-                      color: Colors.white,
-                      size: 20, // تصغير حجم الأيقونة
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.combo.name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'اختر العناصر المفضلة',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.9),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: IconButton(
+                      onPressed: _handleCancel,
+                      icon: const Icon(
+                        Icons.close,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 40,
+                        minHeight: 40,
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
 
-            // Content
+            // Content with improved spacing
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.all(16), // تقليل padding
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
                     // Sections
@@ -193,31 +242,41 @@ class _ComboSelectionPopupState extends State<ComboSelectionPopup> {
                       ),
                     ),
 
-                    // Selection status hint
+                    // Selection status hint with improved design
                     if (!_isSelectionComplete) ...[
                       Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12), // تقليل padding
-                        margin: const EdgeInsets.only(bottom: 12), // تقليل المسافة
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                        margin: const EdgeInsets.only(bottom: 16),
                         decoration: BoxDecoration(
                           color: Colors.orange.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(6), // تصغير الزوايا
-                          border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.orange.withOpacity(0.3),
+                            width: 1,
+                          ),
                         ),
                         child: Row(
                           children: [
-                            Icon(
-                              Icons.info_outline,
-                              color: Colors.orange[700],
-                              size: 16, // تصغير حجم الأيقونة
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(
+                                Icons.info_outline,
+                                color: Colors.orange[700],
+                                size: 18,
+                              ),
                             ),
-                            const SizedBox(width: 6), // تقليل المسافة
+                            const SizedBox(width: 12),
                             Expanded(
                               child: Text(
                                 'أكمل الاختيار للمتابعة',
                                 style: TextStyle(
                                   color: Colors.orange[700],
-                                  fontSize: 11, // تصغير حجم الخط
-                                  fontWeight: FontWeight.w500,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ),
@@ -226,64 +285,107 @@ class _ComboSelectionPopupState extends State<ComboSelectionPopup> {
                       ),
                     ],
 
-                    // Action buttons
+                    // Action buttons with improved design
                     Row(
                       children: [
                         // Cancel button
                         Expanded(
-                          child: OutlinedButton(
-                            onPressed: _handleCancel,
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 12), // تقليل padding
-                              side: BorderSide(color: Colors.grey.shade400),
-                              foregroundColor: Colors.grey[700],
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.grey.withOpacity(0.2),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                             ),
-                            child: const Text(
-                              'إلغاء',
-                              style: TextStyle(
-                                fontSize: 12, // تصغير حجم الخط
-                                fontWeight: FontWeight.w600,
+                            child: OutlinedButton(
+                              onPressed: _handleCancel,
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                side: BorderSide(color: Colors.grey.shade400),
+                                foregroundColor: Colors.grey[700],
+                                backgroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Text(
+                                'إلغاء',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8), // تقليل المسافة
+                        const SizedBox(width: 16),
                         
                         // Add to order button
                         Expanded(
                           flex: 2,
-                          child: ElevatedButton(
-                            onPressed: _isSelectionComplete ? _handleConfirm : null,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _isSelectionComplete 
-                                  ? const Color(0xFF5D377B) 
-                                  : Colors.grey.shade400,
-                              padding: const EdgeInsets.symmetric(vertical: 12), // تقليل padding
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              elevation: _isSelectionComplete ? 2 : 0,
-                            ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Text(
-                                  'أضف للطلب',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12, // تصغير حجم الخط
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _isSelectionComplete 
+                                      ? AppTheme.primaryColor.withOpacity(0.4)
+                                      : Colors.grey.withOpacity(0.2),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
                                 ),
-                                if (_totalExtraPrice > 0)
-                                  Text(
-                                    '+ ${currencyFormat.format(_totalExtraPrice)}',
+                              ],
+                            ),
+                            child: ElevatedButton(
+                              onPressed: _isSelectionComplete ? _handleConfirm : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _isSelectionComplete 
+                                    ? AppTheme.primaryColor
+                                    : Colors.grey.shade400,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                elevation: 0,
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Text(
+                                    'أضف للطلب',
                                     style: TextStyle(
-                                      color: Colors.white.withOpacity(0.9),
-                                      fontSize: 9, // تصغير حجم الخط
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
                                     ),
                                   ),
-                              ],
+                                  if (_totalExtraPrice > 0) ...[
+                                    const SizedBox(height: 4),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        '+ ${currencyFormat.format(_totalExtraPrice)}',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -304,52 +406,89 @@ class _ComboSelectionPopupState extends State<ComboSelectionPopup> {
     final currencyFormat = NumberFormat.currency(symbol: 'ر.س ');
     
     return Container(
-      margin: const EdgeInsets.only(bottom: 8), // تقليل أكثر في المسافة بين الأقسام
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.grey.withOpacity(0.2),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Section header
-          Row(
-            children: [
-              Text(
-                section.groupName,
-                style: const TextStyle(
-                  fontSize: 12, // تصغير أكثر في حجم العنوان
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.primaryColor,
-                ),
+          // Section header with improved design
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.primaryColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppTheme.primaryColor.withOpacity(0.3),
+                width: 1,
               ),
-              if (section.required) ...[
-                const SizedBox(width: 6), // تقليل المسافة
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1), // تقليل padding
-                  decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(3), // تصغير الزوايا
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.category,
+                  color: AppTheme.primaryColor,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  section.groupName,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primaryColor,
                   ),
-                  child: const Text(
-                    'مطلوب',
-                    style: TextStyle(
-                      fontSize: 6, // تصغير أكثر في حجم الخط
-                      color: Colors.red,
-                      fontWeight: FontWeight.w600,
+                ),
+                if (section.required) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: Colors.red.withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: const Text(
+                      'مطلوب',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.red,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                ),
+                ],
               ],
-            ],
+            ),
           ),
-          const SizedBox(height: 4), // تقليل أكثر في المسافة
+          const SizedBox(height: 16),
 
-          // Section items
+          // Section items with improved grid
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 5, // 5 منتجات في كل صف
-              childAspectRatio: 0.6, // تصغير أكثر في نسبة العرض إلى الارتفاع
-              crossAxisSpacing: 4, // تقليل أكثر في المسافة بين العناصر
-              mainAxisSpacing: 4, // تقليل أكثر في المسافة بين الصفوف
+              crossAxisCount: 4, // 4 منتجات في كل صف للتصميم الأفضل
+              childAspectRatio: 0.8, // نسبة محسنة
+              crossAxisSpacing: 12, // مسافات محسنة
+              mainAxisSpacing: 12, // مسافات محسنة
             ),
             itemCount: section.items.length,
             itemBuilder: (context, index) {
@@ -363,7 +502,7 @@ class _ComboSelectionPopupState extends State<ComboSelectionPopup> {
                     color: isSelected 
                         ? AppTheme.primaryColor.withOpacity(0.1)
                         : Colors.white,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(16),
                     border: Border.all(
                       color: isSelected 
                           ? AppTheme.primaryColor
@@ -372,116 +511,171 @@ class _ComboSelectionPopupState extends State<ComboSelectionPopup> {
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 4,
+                        color: isSelected 
+                            ? AppTheme.primaryColor.withOpacity(0.2)
+                            : Colors.black.withOpacity(0.08),
+                        blurRadius: isSelected ? 8 : 4,
                         offset: const Offset(0, 2),
+                        spreadRadius: 0,
                       ),
                     ],
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(4), // تقليل أكثر في padding
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Item image
-                        Expanded(
-                          child: Container(
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Item image with improved design
+                      Expanded(
+                        flex: 3,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(16),
                             ),
-                            child: item.image != null && item.image!.isNotEmpty
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(4),
-                                    child: Image.memory(
-                                      base64Decode(item.image!),
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) {
-                                        return const Center(
-                                          child: Icon(
-                                            Icons.fastfood,
-                                            size: 16, // تصغير أكثر للأيقونة
-                                            color: Colors.grey,
+                          ),
+                          child: item.image != null && item.image!.isNotEmpty
+                              ? ClipRRect(
+                                  borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(16),
+                                  ),
+                                  child: Image.memory(
+                                    base64Decode(item.image!),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey.shade200,
+                                          borderRadius: const BorderRadius.vertical(
+                                            top: Radius.circular(16),
                                           ),
-                                        );
-                                      },
-                                    ),
-                                  )
-                                : const Center(
-                                    child: Icon(
-                                      Icons.fastfood,
-                                      size: 16, // تصغير أكثر للأيقونة
-                                      color: Colors.grey,
+                                        ),
+                                        child: Icon(
+                                          Icons.fastfood,
+                                          size: 32,
+                                          color: Colors.grey[400],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                )
+                              : Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade200,
+                                    borderRadius: const BorderRadius.vertical(
+                                      top: Radius.circular(16),
                                     ),
                                   ),
-                          ),
-                        ),
-                        const SizedBox(height: 2), // تقليل أكثر في المسافة
-
-                        // Item name
-                        Text(
-                          item.name,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 9, // تصغير أكثر في حجم الخط
-                            color: isSelected ? AppTheme.primaryColor : Colors.black87,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 0), // إزالة المسافة
-
-                        // Extra price
-                        Text(
-                          item.extraPrice > 0 
-                              ? '+ ${currencyFormat.format(item.extraPrice)}'
-                              : 'مجاني',
-                          style: TextStyle(
-                            fontSize: 7, // تصغير أكثر في حجم الخط
-                            color: item.extraPrice > 0 
-                                ? Colors.orange[700]
-                                : Colors.green[700],
-                            fontWeight: FontWeight.w500,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-
-                        // Selection indicator
-                        if (isSelected)
-                          Container(
-                            margin: const EdgeInsets.only(top: 4), // تقليل المسافة
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6, // تقليل padding
-                              vertical: 2, // تقليل padding
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryColor,
-                              borderRadius: BorderRadius.circular(8), // تصغير الزوايا
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.check,
-                                  size: 10, // تصغير حجم الأيقونة
-                                  color: Colors.white,
+                                  child: Icon(
+                                    Icons.fastfood,
+                                    size: 32,
+                                    color: Colors.grey[400],
+                                  ),
                                 ),
-                                SizedBox(width: 2), // تقليل المسافة
-                                Text(
-                                  'محدد',
+                        ),
+                      ),
+
+                      // Item details
+                      Expanded(
+                        flex: 2,
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Item name
+                              Expanded(
+                                child: Text(
+                                  item.name,
                                   style: TextStyle(
-                                    fontSize: 8, // تصغير حجم الخط
-                                    color: Colors.white,
                                     fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                    color: isSelected ? AppTheme.primaryColor : Colors.black87,
+                                    height: 1.2,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+
+                              // Extra price with improved design
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: item.extraPrice > 0 
+                                      ? Colors.orange.withOpacity(0.1)
+                                      : Colors.green.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: item.extraPrice > 0 
+                                        ? Colors.orange.withOpacity(0.3)
+                                        : Colors.green.withOpacity(0.3),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Text(
+                                  item.extraPrice > 0 
+                                      ? '+ ${currencyFormat.format(item.extraPrice)}'
+                                      : 'مجاني',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: item.extraPrice > 0 
+                                        ? Colors.orange[700]
+                                        : Colors.green[700],
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+
+                              // Selection indicator
+                              if (isSelected) ...[
+                                const SizedBox(height: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [AppTheme.primaryColor, AppTheme.primaryColor.withOpacity(0.8)],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(10),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: AppTheme.primaryColor.withOpacity(0.3),
+                                        blurRadius: 6,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.check,
+                                        size: 12,
+                                        color: Colors.white,
+                                      ),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'محدد',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
-                            ),
+                            ],
                           ),
-                      ],
-                    ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               );
