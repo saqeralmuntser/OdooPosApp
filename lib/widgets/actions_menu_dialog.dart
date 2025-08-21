@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../backend/providers/enhanced_pos_provider.dart';
 import 'pricelist_selection_dialog.dart';
+import 'combo_test_dialog.dart';
 
 class ActionsMenuDialog extends StatelessWidget {
   const ActionsMenuDialog({super.key});
@@ -17,6 +18,7 @@ class ActionsMenuDialog extends StatelessWidget {
       '1 Guests',
       'Customer Note',
       'Pricelist',
+      'Combo Test',
       'Printer Management',
       'Refund',
       'Switch to Takeaway',
@@ -93,6 +95,9 @@ class ActionsMenuDialog extends StatelessWidget {
       case 'Pricelist':
         _showPricelistDialog(context);
         break;
+      case 'Combo Test':
+        _showComboTestDialog(context);
+        break;
       case 'Printer Management':
         Navigator.of(context).pushNamed('/printers');
         break;
@@ -137,6 +142,13 @@ class ActionsMenuDialog extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => const PricelistSelectionDialog(),
+    );
+  }
+
+  void _showComboTestDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => const ComboTestDialog(),
     );
   }
 

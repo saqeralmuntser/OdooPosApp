@@ -14,18 +14,7 @@ int _extractIdFromArray(dynamic value) {
   throw FormatException('Invalid ID format: $value');
 }
 
-/// Helper function to extract nullable ID from Odoo array format
-int? _extractNullableIdFromArray(dynamic value) {
-  if (value == false || value == null) {
-    return null;
-  }
-  if (value is List && value.isNotEmpty) {
-    return value[0] as int;
-  } else if (value is int) {
-    return value;
-  }
-  return null;
-}
+
 
 /// Helper function to handle nullable strings that might be false
 String? _extractNullableString(dynamic value) {
@@ -76,6 +65,10 @@ class ProductProduct {
   @JsonKey(name: 'image_128', fromJson: _extractNullableString)
   final String? image128;
   
+  // Product type (e.g., 'combo', 'normal', etc.)
+  @JsonKey(name: 'type', fromJson: _extractNullableString)
+  final String? type;
+  
   // Relationships (stored as IDs)
   @JsonKey(name: 'product_template_variant_value_ids')
   final List<int> productTemplateVariantValueIds;
@@ -106,6 +99,7 @@ class ProductProduct {
     this.freeQty = 0.0,
     required this.displayName,
     this.image128,
+    this.type,
     this.productTemplateVariantValueIds = const [],
     this.comboIds = const [],
     this.packagingIds = const [],
@@ -142,6 +136,9 @@ class ProductProduct {
 
   /// Check if product is part of combos
   bool get isPartOfCombos => comboIds.isNotEmpty;
+  
+  /// Check if product is a combo product based on its type
+  bool get isComboProduct => type == 'combo';
 
   ProductProduct copyWith({
     int? id,
@@ -159,6 +156,7 @@ class ProductProduct {
     double? freeQty,
     String? displayName,
     String? image128,
+    String? type,
     List<int>? productTemplateVariantValueIds,
     List<int>? comboIds,
     List<int>? packagingIds,
@@ -182,6 +180,7 @@ class ProductProduct {
       freeQty: freeQty ?? this.freeQty,
       displayName: displayName ?? this.displayName,
       image128: image128 ?? this.image128,
+      type: type ?? this.type,
       productTemplateVariantValueIds: productTemplateVariantValueIds ?? this.productTemplateVariantValueIds,
       comboIds: comboIds ?? this.comboIds,
       packagingIds: packagingIds ?? this.packagingIds,

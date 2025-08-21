@@ -10,7 +10,9 @@ import '../widgets/numpad_widget.dart';
 import '../widgets/actions_menu_dialog.dart';
 import '../widgets/product_information_popup.dart';
 import '../widgets/attribute_selection_popup.dart';
+import '../widgets/combo_selection_popup.dart';
 import '../backend/providers/product_attribute_provider.dart';
+import '../backend/models/product_combo.dart';
 
 class MainPOSScreen extends StatefulWidget {
   const MainPOSScreen({super.key});
@@ -41,14 +43,22 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
 
 
   void _showAttributeSelectionPopup(BuildContext context, ProductProduct product, EnhancedPOSProvider posProvider) {
+    print('🎯 Product "${product.displayName}" (ID: ${product.id}) was tapped');
     
+    // First check if product is a combo product
+    if (posProvider.backendService.isComboProduct(product)) {
+      print('✅ Product is combo, showing combo selection popup');
+      _showComboSelectionPopup(context, product, posProvider);
+      return;
+    } else {
+      print('ℹ️ Product is not combo, checking for attributes...');
+    }
     
     // Check if product has variants/attributes using the backend service
     bool hasAttributes = posProvider.backendService.productHasAttributes(product);
     
     if (!hasAttributes) {
       // Product has no attributes, add directly to order
-     
       _addProductToOrder(context, product, posProvider);
       return;
     }
@@ -76,6 +86,372 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
               selectedAttributeExtraPrices: selectedAttributeExtraPrices,
             );
           },
+        ),
+      ),
+    );
+  }
+
+  /// Show combo selection popup for combo products
+  void _showComboSelectionPopup(BuildContext context, ProductProduct product, EnhancedPOSProvider posProvider) async {
+    try {
+      print('🍔 Combo Detection: Product ${product.displayName} has combo IDs: ${product.comboIds}');
+      print('🍔 Available combos in system: ${posProvider.combos.length}');
+      print('🍔 Available combo items in system: ${posProvider.comboItems.length}');
+      
+      // Get combo details from backend service
+      print('🔍 جاري الحصول على تفاصيل الكومبو من الخادم...');
+      final comboDetails = await posProvider.backendService.getComboDetails(product.id);
+      
+      if (comboDetails == null) {
+        print('❌ No combo details found for product ${product.id}');
+        print('🔍 تشخيص المشكلة:');
+        print('   - المنتج له combo_ids: ${product.comboIds}');
+        print('   - لكن لا توجد عناصر كومبو محملة');
+        print('   - جدول product.combo.item فارغ أو لا يحتوي على بيانات');
+        print('💡 الحل: إضافة عناصر كومبو في Odoo أولاً');
+        
+        if (!mounted) return;
+        
+        // Show informative message to user
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '❌ لا يمكن عرض نافذة اختيار الكومبو\n'
+              '💡 يجب إعداد عناصر الكومبو في Odoo أولاً\n'
+              '📋 جدول product.combo.item فارغ\n'
+              '🔧 سيتم إضافة المنتج كمنتج عادي',
+              style: TextStyle(fontSize: 14),
+            ),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 6),
+            action: SnackBarAction(
+              label: 'إغلاق',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
+          ),
+        );
+        
+        // Fallback to regular product addition
+        _addProductToOrder(context, product, posProvider);
+        return;
+      }
+
+      final combo = comboDetails['combo'] as ProductCombo;
+      final sections = comboDetails['sections'] as List<ComboSection>;
+
+      print('✅ Found combo details: ${combo.name} with ${sections.length} sections');
+      print('🔍 تفاصيل الأقسام:');
+      for (final section in sections) {
+        print('  📋 Section: ${section.groupName} (${section.items.length} items)');
+        for (final item in section.items) {
+          print('    • ${item.name} (+${item.extraPrice} ريال)');
+        }
+      }
+      
+      if (sections.isEmpty) {
+        print('⚠️ تحذير: لا توجد أقسام في الكومبو!');
+        print('💡 هذا يعني أن جدول product.combo.item فارغ');
+      }
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (dialogContext) => ComboSelectionPopup(
+          product: product,
+          combo: combo,
+          sections: sections,
+          onConfirm: (ComboSelectionResult result) {
+            _handleComboSelection(product, result, posProvider);
+          },
+          onCancel: () {
+            print('Combo selection cancelled');
+          },
+        ),
+      );
+      
+    } catch (e) {
+      print('Error showing combo selection popup: $e');
+      
+      if (!mounted) return;
+      
+      // Show error message and fallback to regular product addition
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('خطأ في تحميل تفاصيل الكومبو: $e'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      
+      _addProductToOrder(context, product, posProvider);
+    }
+  }
+
+  /// Handle combo selection result
+  void _handleComboSelection(ProductProduct product, ComboSelectionResult result, EnhancedPOSProvider posProvider) async {
+    try {
+      print('Handling combo selection for ${product.displayName}');
+      print('Selected items: ${result.selectedItems.keys.join(', ')}');
+      print('Total extra price: ${result.totalExtraPrice}');
+      
+      // Ensure there's an active order, create one if needed
+      if (!posProvider.hasActiveOrder) {
+        final session = posProvider.currentSession;
+        final config = posProvider.selectedConfig;
+        if (session == null || config == null) {
+          throw Exception('No active session or config found');
+        }
+        
+        final pricelistId = config.pricelistId ?? 1;
+        print('📝 Creating order (combo) using pricelist_id: $pricelistId');
+        
+        final orderResult = await posProvider.backendService.orderManager.createOrder(
+          session: session,
+          pricelistId: pricelistId,
+          partnerId: posProvider.selectedCustomer?.id,
+        );
+        if (!orderResult.success) {
+          throw Exception(orderResult.error ?? 'Failed to create order');
+        }
+      }
+      
+      // Calculate the final price including combo base price and extra prices
+      final basePrice = posProvider.getProductPrice(product, quantity: 1.0);
+      final totalPrice = basePrice + result.totalExtraPrice;
+      
+      // Create combo description for order line
+      final comboDescription = result.selectionDescription.isNotEmpty 
+          ? ' (${result.selectionDescription})'
+          : '';
+      
+      // Add the main combo product to the order with selected components info
+      final orderResult = await posProvider.backendService.orderManager.addProductToOrder(
+        product: product,
+        quantity: 1.0,
+        customPrice: totalPrice,
+        attributeNames: [result.selectionDescription], // Use combo selections as attribute display
+        attributeExtraPrices: [result.totalExtraPrice],
+      );
+      
+      if (!orderResult.success) {
+        throw Exception(orderResult.error ?? 'Failed to add combo to order');
+      }
+      
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم إضافة ${product.displayName}$comboDescription للطلب'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      
+    } catch (e) {
+      print('Error handling combo selection: $e');
+      
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('خطأ في إضافة الكومبو: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// Build product card with combo indicator
+  Widget _buildProductCard({
+    required ProductProduct product,
+    required VoidCallback onTap,
+    required VoidCallback onInfoTap,
+    required EnhancedPOSProvider posProvider,
+  }) {
+    // Check if product is combo using both the provider (for testing) and the product itself
+    final isCombo = product.isComboProduct || posProvider.isComboProduct(product);
+    final currencyFormat = NumberFormat.currency(symbol: 'ر.س ');
+    
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isCombo ? Colors.orange : AppTheme.borderColor,
+            width: isCombo ? 2 : 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: isCombo 
+                ? Colors.orange.withOpacity(0.2)
+                : Colors.black.withOpacity(0.05),
+              blurRadius: isCombo ? 8 : 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Product image
+            Expanded(
+              flex: 3,
+              child: Stack(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                      color: Colors.grey[100],
+                    ),
+                    child: product.image128 != null && product.image128!.isNotEmpty
+                        ? ClipRRect(
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                            child: Image.memory(
+                              base64Decode(product.image128!),
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                              height: double.infinity,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  width: double.infinity,
+                                  height: double.infinity,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[200],
+                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                                  ),
+                                  child: Icon(
+                                    Icons.fastfood,
+                                    size: 48,
+                                    color: Colors.grey[400],
+                                  ),
+                                );
+                              },
+                            ),
+                          )
+                        : Container(
+                            width: double.infinity,
+                            height: double.infinity,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[200],
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                            ),
+                            child: Icon(
+                              Icons.fastfood,
+                              size: 48,
+                              color: Colors.grey[400],
+                            ),
+                          ),
+                  ),
+                  
+                  // Combo indicator
+                  if (isCombo)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.orange,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.orange.withOpacity(0.3),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.dining,
+                              size: 12,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 4),
+                            const Text(
+                              'COMBO',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  
+                  // Information icon
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: GestureDetector(
+                      onTap: onInfoTap,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.9),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.info_outline,
+                          size: 16,
+                          color: AppTheme.primaryColor,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Product details
+            Expanded(
+              flex: 2,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Product name
+                    Text(
+                      product.displayName,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: isCombo ? Colors.orange[800] : Colors.black87,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const Spacer(),
+                    
+                    // Price
+                    Text(
+                      currencyFormat.format(product.lstPrice),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: isCombo ? Colors.orange[700] : AppTheme.primaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -408,10 +784,11 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
                         itemCount: products.length,
                         itemBuilder: (context, index) {
                           final product = products[index];
-                          return ProductCard(
+                          return _buildProductCard(
                             product: product,
                             onTap: () => _showAttributeSelectionPopup(context, product, posProvider),
                             onInfoTap: () => _showProductInformation(context, product),
+                            posProvider: posProvider,
                           );
                         },
                       );
@@ -800,6 +1177,40 @@ class ProductCard extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+            // Combo indicator badge
+            Consumer<EnhancedPOSProvider>(
+              builder: (context, posProvider, _) {
+                final isCombo = posProvider.isComboProduct(product);
+                if (!isCombo) return const SizedBox.shrink();
+                
+                return Positioned(
+                  top: 8,
+                  left: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.orange,
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const Text(
+                      'COMBO',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
             // Information icon
             Positioned(

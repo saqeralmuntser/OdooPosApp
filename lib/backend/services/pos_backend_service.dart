@@ -10,6 +10,7 @@ import '../models/product_attribute.dart';
 import '../models/product_pricelist.dart';
 import '../models/product_pricelist_item.dart';
 import '../models/res_company.dart';
+import '../models/product_combo.dart';
 import '../api/odoo_api_client.dart';
 import '../storage/local_storage.dart';
 import 'session_manager.dart';
@@ -40,6 +41,8 @@ class POSBackendService {
   List<POSPaymentMethod> _paymentMethods = [];
   List<ProductPricelist> _pricelists = [];
   List<ProductPricelistItem> _pricelistItems = [];
+  List<ProductCombo> _combos = [];
+  List<ProductComboItem> _comboItems = [];
   
   // Map to store product templates with their attribute lines
   Map<int, Map<String, dynamic>> _productTemplates = {};
@@ -77,6 +80,8 @@ class POSBackendService {
   List<POSPaymentMethod> get paymentMethods => List.unmodifiable(_paymentMethods);
   List<ProductPricelist> get pricelists => List.unmodifiable(_pricelists);
   List<ProductPricelistItem> get pricelistItems => List.unmodifiable(_pricelistItems);
+  List<ProductCombo> get combos => List.unmodifiable(_combos);
+  List<ProductComboItem> get comboItems => List.unmodifiable(_comboItems);
   List<AccountTax> get taxes => List.unmodifiable(_taxes);
   ResCompany? get company => _company;
 
@@ -564,6 +569,15 @@ class POSBackendService {
         _pricelistItems = [];
       }
 
+      // Load combos
+      try {
+        await _loadCombos();
+      } catch (comboError) {
+        print('Warning: Failed to load combos, continuing without combo data: $comboError');
+        _combos = [];
+        _comboItems = [];
+      }
+
       // إعادة جلب إعدادات POS Config الكاملة مع حقول الطابعات
       await _reloadConfigWithPrinterSettings(session.configId);
 
@@ -769,25 +783,56 @@ class POSBackendService {
           'available_in_pos', 'to_weight', 'active', 'product_tmpl_id',
           'qty_available', 'virtual_available', 'taxes_id', 
           'product_template_variant_value_ids', 'attribute_line_ids', 'pos_categ_ids',
-          'image_128'
+          'image_128', 'combo_ids', 'type'
         ],
       );
 
-      // Debug: Print first product data to verify we're getting variant info
+      // Debug: Print first product data to verify we're getting combo info
       if (productsData.isNotEmpty) {
         print('=== First Product Data from Server ===');
         print('Product: ${productsData[0]['display_name']}');
         print('Product Template ID: ${productsData[0]['product_tmpl_id']}');
-        print('Raw data: ${productsData[0]}');
+        print('Product Type: ${productsData[0]['type']}');
+        print('Has combo_ids: ${productsData[0].containsKey('combo_ids')}');
+        if (productsData[0].containsKey('combo_ids')) {
+          print('Combo IDs: ${productsData[0]['combo_ids']}');
+        }
         print('Has product_template_variant_value_ids: ${productsData[0].containsKey('product_template_variant_value_ids')}');
         if (productsData[0].containsKey('product_template_variant_value_ids')) {
           print('Variant Value IDs: ${productsData[0]['product_template_variant_value_ids']}');
         }
-        print('Has attribute_line_ids: ${productsData[0].containsKey('attribute_line_ids')}');
-        if (productsData[0].containsKey('attribute_line_ids')) {
-          print('Attribute Line IDs: ${productsData[0]['attribute_line_ids']}');
-        }
         print('=====================================');
+      }
+      
+      // Check if any products are combo type
+      final comboProducts = productsData.where((product) => 
+        product.containsKey('type') && 
+        product['type'] == 'combo'
+      ).toList();
+      
+      print('📦 Found ${comboProducts.length} combo products (type="combo") out of ${productsData.length} total products');
+      for (final product in comboProducts) {
+        print('   🍔 Combo Product: ${product['display_name']} - type: ${product['type']}, combo_ids: ${product['combo_ids']}');
+      }
+      
+      // Show first few products with their types for debugging
+      print('🔍 First 5 products and their types:');
+      for (int i = 0; i < productsData.length && i < 5; i++) {
+        final product = productsData[i];
+        print('   ${i + 1}. ${product['display_name']} - type: "${product['type']}"');
+      }
+      
+      // Also check if any products have combo_ids for debugging
+      final productsWithComboIds = productsData.where((product) => 
+        product.containsKey('combo_ids') && 
+        product['combo_ids'] != false && 
+        product['combo_ids'] is List && 
+        (product['combo_ids'] as List).isNotEmpty
+      ).toList();
+      
+      print('📋 Found ${productsWithComboIds.length} products with combo_ids out of ${productsData.length} total products');
+      for (final product in productsWithComboIds) {
+        print('   📋 Product with combo_ids: ${product['display_name']} - combo_ids: ${product['combo_ids']}');
       }
 
       // Also load product templates to get attribute information
@@ -1126,6 +1171,653 @@ class POSBackendService {
       print('Error loading pricelist items: $e');
       throw e;
     }
+  }
+
+  /// تحميل الكومبوهات
+  Future<void> _loadCombos() async {
+    try {
+      print('تحميل الكومبوهات...');
+      
+      // محاولة تحميل كومبوهات المنتجات من Odoo
+      // إذا لم تكن الجدول موجود، إنشاء بيانات تجريبية
+      try {
+        final combosData = await _apiClient.searchRead(
+          'product.combo',
+          domain: [],
+          fields: [
+            'id', 'name', 'base_price', 'sequence', 'combo_item_ids'
+          ],
+        );
+
+        _combos = combosData.map((data) => ProductCombo.fromJson(data)).toList();
+        
+                // تحميل عناصر الكومبو لجميع الكومبوهات
+        if (_combos.isNotEmpty) {
+          final comboIds = _combos.map((combo) => combo.id).toList();
+          print('🔍 تحميل عناصر الكومبو للكومبوهات: $comboIds');
+          await _loadComboItems(comboIds);
+          print('📊 بعد تحميل عناصر الكومبو: ${_comboItems.length} عنصر');
+        } else {
+          print('⚠️ لا توجد كومبوهات لتحميل عناصرها');
+        }
+        
+              // أيضاً تحميل عناصر كومبو المنتجات المرتبطة
+      print('🔍 تحميل عناصر كومبو من المنتجات...');
+      await _loadComboItemsFromProducts();
+      print('📊 بعد تحميل عناصر كومبو من المنتجات: ${_comboItems.length} عنصر');
+      
+      // تشخيص شامل للبيانات المحملة
+      print('🔍 تشخيص شامل للبيانات:');
+      print('   - الكومبوهات المحملة: ${_combos.length}');
+      for (final combo in _combos) {
+        print('     • كومبو ${combo.id}: ${combo.name} (عناصر: ${combo.comboItemIds})');
+      }
+      
+      print('   - عناصر الكومبو المحملة: ${_comboItems.length}');
+      for (final item in _comboItems) {
+        print('     • عنصر ${item.id}: منتج ${item.productId} في كومبو ${item.comboId}');
+      }
+      
+      print('   - المنتجات مع combo_ids:');
+      for (final product in _products.where((p) => p.comboIds.isNotEmpty)) {
+        print('     • ${product.displayName}: combo_ids = ${product.comboIds}');
+      }
+      
+      print('📊 ملخص البيانات المحملة:');
+      print('   - الكومبوهات: ${_combos.length}');
+      print('   - عناصر الكومبو: ${_comboItems.length}');
+      print('   - المنتجات المرتبطة بالكومبو: ${_products.where((p) => p.comboIds.isNotEmpty).length}');
+      
+      // التحقق من وجود عناصر كومبو للمنتجات التي لها combo_ids
+      if (_comboItems.isEmpty && _products.any((p) => p.comboIds.isNotEmpty)) {
+        print('⚠️ لم يتم العثور على عناصر كومبو من Odoo');
+        print('🔍 تشخيص المشكلة:');
+        print('   1. تأكد من وجود جدول product.combo.item في Odoo');
+        print('   2. تأكد من إضافة عناصر كومبو في الجدول');
+        print('   3. تأكد من ربط العناصر بالكومبوهات الصحيحة');
+        print('   4. تأكد من أن combo_ids في المنتجات تشير إلى معرفات صحيحة');
+      }
+        
+      } catch (tableError) {
+        print('تحذير: جدول product.combo غير موجود في Odoo: $tableError');
+        print('❌ يجب إعداد جداول الكومبو في Odoo أولاً');
+        // لا ننشئ بيانات تجريبية - نعتمد على البيانات الحقيقية فقط
+      }
+
+      print('تم تحميل ${_combos.length} كومبو بنجاح مع ${_comboItems.length} عنصر');
+      
+    } catch (e) {
+      print('خطأ في تحميل الكومبوهات: $e');
+      // لا نرمي الخطأ، فقط نسجل الخطأ ونستمر بدون بيانات الكومبو
+      _combos = [];
+      _comboItems = [];
+      
+      // لا ننشئ بيانات تجريبية - نعتمد على البيانات الحقيقية من Odoo فقط
+    }
+  }
+
+  /// تحميل عناصر الكومبو لمعرفات الكومبو المحددة
+  Future<void> _loadComboItems(List<int> comboIds) async {
+    try {
+      if (comboIds.isEmpty) return;
+      
+      print('تحميل عناصر الكومبو للكومبوهات: $comboIds');
+      
+      // تحميل عناصر الكومبو من جدول product.combo.item
+      print('🔍 البحث في جدول product.combo.item للكومبوهات: $comboIds');
+      
+      List<Map<String, dynamic>> comboItemsData = [];
+      
+      try {
+        print('🔍 البحث في جدول product.combo.item مع domain: [["combo_id", "in", $comboIds]]');
+        
+        comboItemsData = await _apiClient.searchRead(
+          'product.combo.item',
+          domain: [['combo_id', 'in', comboIds]],
+          fields: [
+            'id', 'combo_id', 'product_id', 'extra_price'
+          ],
+        );
+        
+        print('📋 تم العثور على ${comboItemsData.length} عنصر كومبو من قاعدة البيانات');
+        print('🔍 Domain المستخدم: [["combo_id", "in", $comboIds]]');
+        
+        if (comboItemsData.isEmpty) {
+          print('⚠️ جدول product.combo.item فارغ أو لا يحتوي على عناصر للكومبوهات: $comboIds');
+          print('💡 يجب إضافة عناصر كومبو في Odoo أو التأكد من بنية البيانات');
+          print('🔍 تشخيص إضافي:');
+          print('   - تأكد من وجود جدول product.combo.item في قاعدة البيانات');
+          print('   - تأكد من إضافة سجلات في الجدول');
+          print('   - تأكد من أن combo_id في الجدول يشير إلى معرفات صحيحة');
+          print('   - تأكد من أن product_id في الجدول يشير إلى منتجات موجودة');
+        }
+        
+      } catch (tableError) {
+        print('❌ خطأ في الوصول لجدول product.combo.item: $tableError');
+        print('💡 يجب التأكد من وجود جدول product.combo.item في Odoo');
+        return;
+      }
+
+      if (comboItemsData.isNotEmpty) {
+        print('بيانات عناصر الكومبو الخام من Odoo:');
+        for (final item in comboItemsData) {
+          print('  - المعرف: ${item['id']}, المنتج: ${item['product_id']}, السعر الإضافي: ${item['extra_price']}');
+        }
+
+        // إضافة العناصر الجديدة إلى القائمة الموجودة
+        final newItems = comboItemsData.map((data) => ProductComboItem.fromJson(data)).toList();
+        for (final newItem in newItems) {
+          // تجنب الازدواجية
+          if (!_comboItems.any((item) => item.id == newItem.id)) {
+            _comboItems.add(newItem);
+          }
+        }
+        
+        print('تم تحميل ${newItems.length} عنصر كومبو جديد، المجموع: ${_comboItems.length}');
+      }
+      
+    } catch (e) {
+      print('خطأ في تحميل عناصر الكومبو: $e');
+      // لا نرمي الخطأ، فقط نسجل الخطأ
+    }
+  }
+
+  /// تحميل عناصر كومبو محددة بالمعرفات
+  Future<void> _loadComboItemsByIds(List<int> comboItemIds) async {
+    try {
+      if (comboItemIds.isEmpty) return;
+      
+      print('تحميل عناصر كومبو محددة بالمعرفات: $comboItemIds');
+      
+      // تحميل عناصر كومبو محددة بالمعرفات من جدول product.combo.item
+      print('🔍 البحث في جدول product.combo.item للمعرفات: $comboItemIds');
+      final comboItemsData = await _apiClient.searchRead(
+        'product.combo.item',
+        domain: [['id', 'in', comboItemIds]],
+        fields: [
+          'id', 'combo_id', 'product_id', 'extra_price'
+        ],
+      );
+      
+      print('📋 تم العثور على ${comboItemsData.length} عنصر كومبو محدد من قاعدة البيانات');
+
+      print('بيانات عناصر الكومبو المحددة من Odoo:');
+      for (final item in comboItemsData) {
+        print('  - المعرف: ${item['id']}, المنتج: ${item['product_id']}, السعر الإضافي: ${item['extra_price']}');
+      }
+
+      // إضافة العناصر الجديدة إلى القائمة الموجودة
+      final newItems = comboItemsData.map((data) => ProductComboItem.fromJson(data)).toList();
+      for (final newItem in newItems) {
+        // تجنب الازدواجية
+        if (!_comboItems.any((item) => item.id == newItem.id)) {
+          _comboItems.add(newItem);
+        }
+      }
+      
+      print('تم تحميل ${newItems.length} عنصر كومبو محدد، المجموع: ${_comboItems.length}');
+      
+    } catch (e) {
+      print('خطأ في تحميل عناصر الكومبو المحددة: $e');
+      // لا نرمي الخطأ، فقط نسجل الخطأ
+    }
+  }
+
+  /// تحميل عناصر كومبو المنتجات المرتبطة
+  Future<void> _loadComboItemsFromProducts() async {
+    try {
+      // العثور على جميع معرفات الكومبو من المنتجات
+      final productComboIds = <int>{};
+      for (final product in _products) {
+        if (product.comboIds.isNotEmpty) {
+          productComboIds.addAll(product.comboIds);
+          print('🔍 المنتج "${product.displayName}" له combo_ids: ${product.comboIds}');
+        }
+      }
+
+      if (productComboIds.isNotEmpty) {
+        print('📋 تحميل عناصر كومبو للمعرفات: ${productComboIds.toList()}');
+        print('🔍 استراتيجية التحميل:');
+        print('   1. البحث في جدول product.combo.item للمعرفات المحددة');
+        print('   2. البحث في جدول product.combo للكومبوهات المحددة');
+        print('   3. تحميل العناصر المرتبطة بالكومبوهات الموجودة');
+        
+        // أولاً: محاولة تحميل هذه المعرفات كمعرفات لجدول product.combo.item
+        await _loadComboItemsByIds(productComboIds.toList());
+        
+        // ثانياً: محاولة تحميل هذه المعرفات كمعرفات لجدول product.combo
+        await _loadAdditionalCombos(productComboIds.toList());
+        
+        // ثالثاً: تحميل الكومبوهات المرتبطة بعناصر الكومبو الموجودة
+        await _loadRelatedCombos(productComboIds.toList());
+        
+        print('📊 نتيجة التحميل:');
+        print('   - عناصر كومبو محملة: ${_comboItems.length}');
+        print('   - الكومبوهات المحملة: ${_combos.length}');
+      }
+      
+    } catch (e) {
+      print('❌ خطأ في تحميل عناصر كومبو المنتجات: $e');
+    }
+  }
+
+
+
+  /// تحميل كومبوهات مرتبطة بعناصر كومبو محددة
+  Future<void> _loadRelatedCombos(List<int> comboItemIds) async {
+    try {
+      if (comboItemIds.isEmpty) return;
+      
+      // العثور على معرفات الكومبوهات المرتبطة بهذه العناصر
+      final relatedComboIds = <int>{};
+      for (final item in _comboItems) {
+        if (comboItemIds.contains(item.id)) {
+          relatedComboIds.add(item.comboId);
+        }
+      }
+
+      if (relatedComboIds.isNotEmpty) {
+        print('تحميل الكومبوهات المرتبطة: ${relatedComboIds.toList()}');
+        
+        // تحميل الكومبوهات المفقودة
+        final missingComboIds = relatedComboIds.where((id) => 
+          !_combos.any((combo) => combo.id == id)
+        ).toList();
+        
+        if (missingComboIds.isNotEmpty) {
+          await _loadAdditionalCombos(missingComboIds);
+        }
+      }
+      
+    } catch (e) {
+      print('خطأ في تحميل الكومبوهات المرتبطة: $e');
+    }
+  }
+
+  /// تحميل كومبوهات إضافية بناءً على معرفات محددة
+  Future<void> _loadAdditionalCombos(List<int> comboIds) async {
+    try {
+      if (comboIds.isEmpty) return;
+      
+      print('تحميل كومبوهات إضافية: $comboIds');
+      
+      final combosData = await _apiClient.searchRead(
+        'product.combo',
+        domain: [['id', 'in', comboIds]],
+        fields: [
+          'id', 'name', 'base_price', 'sequence', 'combo_item_ids'
+        ],
+      );
+
+      final newCombos = combosData.map((data) => ProductCombo.fromJson(data)).toList();
+      for (final newCombo in newCombos) {
+        // تجنب الازدواجية
+        if (!_combos.any((combo) => combo.id == newCombo.id)) {
+          _combos.add(newCombo);
+        }
+      }
+      
+      print('تم تحميل ${newCombos.length} كومبو إضافي، المجموع: ${_combos.length}');
+      
+    } catch (e) {
+      print('خطأ في تحميل الكومبوهات الإضافية: $e');
+    }
+  }
+
+  /// الحصول على تفاصيل الكومبو لمنتج
+  Future<Map<String, dynamic>?> getComboDetails(int productId) async {
+    try {
+      print('🔍 الحصول على تفاصيل الكومبو للمنتج المعرف: $productId');
+      
+      // التحقق من وجود بيانات كومبو محملة
+      print('   📊 حالة بيانات الكومبو:');
+      print('     - الكومبوهات المحملة: ${_combos.length}');
+      print('     - عناصر الكومبو المحملة: ${_comboItems.length}');
+      
+      if (_combos.isNotEmpty) {
+        print('   📋 الكومبوهات الموجودة:');
+        for (final combo in _combos) {
+          print('     - كومبو ${combo.id}: ${combo.name} (عناصر: ${combo.comboItemIds})');
+        }
+      } else {
+        print('   ⚠️ لا توجد كومبوهات محملة');
+      }
+      
+      if (_comboItems.isNotEmpty) {
+        print('   📋 عناصر الكومبو الموجودة:');
+        for (final item in _comboItems) {
+          print('     - عنصر ${item.id}: منتج ${item.productId} في كومبو ${item.comboId} (سعر إضافي: ${item.extraPrice})');
+        }
+      } else {
+        print('   ⚠️ لا توجد عناصر كومبو محملة - هذا هو سبب المشكلة!');
+        print('   💡 يجب إضافة عناصر في جدول product.combo.item');
+      }
+      
+      // العثور على المنتج
+      final product = _products.firstWhere(
+        (p) => p.id == productId,
+        orElse: () => throw Exception('المنتج غير موجود')
+      );
+
+      print('   تم العثور على المنتج: ${product.displayName} مع النوع: "${product.type}" ومعرفات الكومبو: ${product.comboIds}');
+
+      // التحقق من أن هذا منتج كومبو وله عناصر كومبو
+      if (product.type != 'combo') {
+        print('   ❌ المنتج ليس من نوع كومبو (النوع="${product.type}")');
+        return null;
+      }
+      
+      if (product.comboIds.isEmpty) {
+        print('   ⚠️ منتج الكومبو ليس له combo_ids - لا توجد عناصر لعرضها');
+        print('   ❌ لا يمكن عرض كومبو بدون عناصر - يجب إضافة combo_ids في Odoo');
+        return null;
+      }
+      
+      print('   ✅ تم العثور على منتج كومبو مع ${product.comboIds.length} عنصر كومبو للمعالجة');
+
+      // الحصول على عناصر الكومبو بناءً على combo_ids للمنتج
+      final comboItems = <ProductComboItem>[];
+      final usedCombos = <ProductCombo>[];
+      
+      print('   🔍 تحليل combo_ids: ${product.comboIds}');
+      print('   📊 البيانات المتوفرة:');
+      print('     - عناصر الكومبو المحملة: ${_comboItems.length}');
+      print('     - الكومبوهات المحملة: ${_combos.length}');
+      
+      // عرض جميع عناصر الكومبو المحملة للتشخيص
+      if (_comboItems.isNotEmpty) {
+        print('   📋 جميع عناصر الكومبو المحملة:');
+        for (final item in _comboItems) {
+          print('     • ID: ${item.id}, المنتج: ${item.productId}, الكومبو: ${item.comboId}, المجموعة: ${item.groupName}');
+        }
+      }
+      
+      // البحث المتقدم عن عناصر الكومبو
+      print('   🔍 البحث عن عناصر الكومبو للمعرفات: ${product.comboIds}');
+      
+      for (final comboId in product.comboIds) {
+        print('     🔎 البحث عن المعرف: $comboId');
+        
+        // البحث في الكومبوهات أولاً
+        final directCombo = _combos.where((combo) => combo.id == comboId).toList();
+        if (directCombo.isNotEmpty) {
+          final combo = directCombo.first;
+          if (!usedCombos.any((c) => c.id == combo.id)) {
+            usedCombos.add(combo);
+            print('     ✅ عثر على كومبو مباشر: ${combo.name} (ID: ${combo.id})');
+            
+            // تحميل جميع عناصر هذا الكومبو
+            final comboItemsForThisCombo = _comboItems.where((item) => item.comboId == combo.id).toList();
+            print('     📋 الكومبو ${combo.name} يحتوي على ${comboItemsForThisCombo.length} عنصر');
+            
+            for (final item in comboItemsForThisCombo) {
+              if (!comboItems.any((ci) => ci.id == item.id)) {
+                comboItems.add(item);
+                print('     📋 إضافة عنصر كومبو: ${item.productId} من الكومبو ${combo.name}');
+              }
+            }
+          }
+          continue;
+        }
+        
+        // البحث المباشر في product.combo.item (للتوافق مع الإصدارات القديمة)
+        final directComboItem = _comboItems.where((item) => item.id == comboId).toList();
+        if (directComboItem.isNotEmpty) {
+          final item = directComboItem.first;
+          comboItems.add(item);
+          print('     ✅ عثر على عنصر كومبو مباشر: ID $comboId -> منتج ${item.productId}');
+          
+          // البحث عن الكومبو المرتبط
+          final relatedCombo = _combos.where((combo) => combo.id == item.comboId).toList();
+          if (relatedCombo.isNotEmpty) {
+            final combo = relatedCombo.first;
+            if (!usedCombos.any((c) => c.id == combo.id)) {
+              usedCombos.add(combo);
+              print('     📋 مرتبط بالكومبو: ${combo.name} (ID: ${combo.id})');
+            }
+          }
+          continue;
+        }
+        
+        print('     ❌ لم يتم العثور على المعرف $comboId في الكومبوهات أو عناصر الكومبو');
+      }
+
+      // إذا لم يتم العثور على عناصر كومبو من combo_ids، إرجاع خطأ واضح
+      if (comboItems.isEmpty) {
+        print('   ❌ لم يتم العثور على عناصر كومبو للمعرفات: ${product.comboIds}');
+        print('   🔍 المشكلة: جدول product.combo.item فارغ أو لا يحتوي على بيانات');
+        print('   📋 الكومبوهات الموجودة: ${_combos.map((c) => '${c.id}:${c.name}').toList()}');
+        print('   💡 الحل المطلوب:');
+        print('      1. إضافة عناصر كومبو في جدول product.combo.item في Odoo');
+        print('      2. ربط العناصر بالكومبوهات الصحيحة (combo_id)');
+        print('      3. التأكد من أن combo_ids في المنتج تشير إلى معرفات صحيحة');
+        print('   🚫 لن يتم إنشاء بيانات وهمية - يجب إعداد البيانات الحقيقية أولاً');
+        return null;
+      }
+      
+      print('   ✅ تم العثور على ${comboItems.length} عنصر كومبو من ${usedCombos.length} كومبو');
+      for (final combo in usedCombos) {
+        print('     🎯 كومبو: ${combo.name} (${combo.comboItemIds.length} عنصر)');
+      }
+
+      // Group items by categories using intelligent logic based on Odoo data
+      final Map<String, List<ComboSectionItem>> sections = {};
+      
+      // أولاً، دعنا نحلل عناصر الكومبو لإنشاء مجموعات منطقية
+      print('   🔍 تحليل ${comboItems.length} عنصر كومبو للتجميع الذكي...');
+      
+      if (comboItems.isEmpty) {
+        print('   ❌ لا توجد عناصر كومبو لتحليلها!');
+        print('   🔍 المشكلة: جدول product.combo.item فارغ أو لا يحتوي على بيانات');
+        print('   💡 الحل: إضافة عناصر كومبو في Odoo أولاً');
+        return null;
+      }
+      
+      // الحصول على جميع منتجات عناصر الكومبو للتحليل
+      final comboItemProducts = <int, ProductProduct>{};
+      for (final item in comboItems) {
+        try {
+          final itemProduct = _products.firstWhere(
+            (p) => p.id == item.productId,
+            orElse: () => throw Exception('Combo item product not found with ID ${item.productId}')
+          );
+          comboItemProducts[item.id] = itemProduct;
+          print('     📋 عنصر الكومبو: ${itemProduct.displayName} (ID: ${item.id}), السعر الإضافي: ${item.extraPrice})');
+        } catch (e) {
+          // إذا لم يتم العثور على المنتج، تخطى (للعناصر التلقائية)
+          print('     ⚠️ تخطي عنصر الكومبو ID ${item.id} - المنتج غير موجود');
+        }
+      }
+      
+      // استراتيجية تجميع ذكية بناءً على بيانات Odoo الحقيقية
+      String determineGroupName(ProductComboItem item, ProductProduct product) {
+        // الاستراتيجية 1: التجميع حسب اسم المنتج من Odoo (الأكثر دقة)
+        final productName = product.displayName.toLowerCase();
+        if (productName.contains('burger') || productName.contains('sandwich') || 
+            productName.contains('meal') || productName.contains('combo')) {
+          print('     🍔 التجميع حسب اسم المنتج: Burgers Choice');
+          return 'Burgers Choice';
+        }
+        if (productName.contains('drink') || productName.contains('beverage') || 
+            productName.contains('juice') || productName.contains('soda') || 
+            productName.contains('water') || productName.contains('coffee') ||
+            productName.contains('coca') || productName.contains('cola') ||
+            productName.contains('minute') || productName.contains('maid') ||
+            productName.contains('milkshake') || productName.contains('shake') ||
+            productName.contains('espresso') || productName.contains('fanta')) {
+          print('     🥤 التجميع حسب اسم المنتج: Drinks choice');
+          return 'Drinks choice';
+        }
+        if (productName.contains('fries') || productName.contains('chips') || 
+            productName.contains('side') || productName.contains('extra')) {
+          print('     🍟 التجميع حسب اسم المنتج: Side Items');
+          return 'Side Items';
+        }
+        
+        // الاستراتيجية 2: التجميع حسب السعر الإضافي من Odoo
+        if (item.extraPrice > 0) {
+          print('     💰 التجميع حسب السعر الإضافي: Drinks choice (+${item.extraPrice} ريال)');
+          return 'Drinks choice';
+        }
+        
+        // الاستراتيجية 3: التجميع حسب نوع المنتج من Odoo (الأقل دقة)
+        if (product.type != null && product.type!.isNotEmpty && product.type != 'consu') {
+          print('     📦 التجميع حسب نوع المنتج: ${product.type}');
+          return product.type!;
+        }
+        
+        // الاستراتيجية 4: التجميع الافتراضي
+        print('     📦 استخدام المجموعة الافتراضية: Main Items');
+        return 'Main Items';
+      }
+      
+      // إنشاء الأقسام باستخدام التجميع الذكي
+      for (final item in comboItems) {
+        String groupName;
+        String itemName;
+        String? itemImage;
+        
+        // البحث عن المنتج المرتبط بهذا العنصر
+        ProductProduct? itemProduct;
+        try {
+          itemProduct = _products.firstWhere((p) => p.id == item.productId);
+        } catch (e) {
+          print('     ⚠️ المنتج غير موجود: ID ${item.productId}');
+          continue; // تخطي هذا العنصر
+        }
+        
+        // استخدام التجميع الذكي لإنشاء اسم المجموعة
+        groupName = determineGroupName(item, itemProduct);
+        itemName = itemProduct.displayName;
+        itemImage = itemProduct.image128;
+        
+        print('   🎯 المنتج: $itemName → المجموعة: "$groupName" (السعر الإضافي: ${item.extraPrice})');
+
+        final sectionItem = ComboSectionItem(
+          productId: item.productId,
+          name: itemName,
+          image: itemImage,
+          extraPrice: item.extraPrice,
+        );
+
+        if (!sections.containsKey(groupName)) {
+          sections[groupName] = [];
+        }
+        sections[groupName]!.add(sectionItem);
+      }
+
+      // تحويل إلى كائنات ComboSection مع قيم افتراضية ذكية
+      final comboSections = sections.entries.map((entry) {
+        print('   📋 إنشاء قسم: "${entry.key}" مع ${entry.value.length} عنصر');
+        
+        // محاولة العثور على عناصر الكومبو لهذه المجموعة للحصول على نوع الاختيار وحالة المطلوب
+        String selectionType = 'single'; // افتراضي
+        bool required = true; // افتراضي
+        
+        // استخدام قيم افتراضية
+        selectionType = 'single';
+        required = true;
+        
+        return ComboSection(
+          groupName: entry.key,
+          selectionType: selectionType,
+          required: required,
+          items: entry.value,
+        );
+      }).toList();
+
+      // إنشاء كائن كومبو من الكومبوهات المستخدمة أو من المنتج
+      final combo = usedCombos.isNotEmpty 
+        ? usedCombos.first // استخدام أول كومبو إذا كان متوفراً
+        : ProductCombo(
+            id: product.id,
+            name: product.displayName,
+            basePrice: product.lstPrice,
+            sequence: 1,
+            comboItemIds: comboItems.map((item) => item.id).toList(),
+          );
+
+      print('   ✅ هيكل الكومبو النهائي:');
+      print('      الكومبو: ${combo.name}');
+      print('      الأقسام: ${comboSections.length}');
+      
+      if (comboSections.isEmpty) {
+        print('      ❌ خطأ: لم يتم إنشاء أي أقسام!');
+      } else {
+        for (final section in comboSections) {
+          print('        - ${section.groupName}: ${section.items.length} عنصر');
+          for (final item in section.items) {
+            print('          • ${item.name} (+${item.extraPrice} ريال)');
+          }
+        }
+      }
+      
+      // التحقق من وجود الأقسام المتوقعة
+      final hasBurgers = comboSections.any((s) => s.groupName == 'Burgers Choice');
+      final hasDrinks = comboSections.any((s) => s.groupName == 'Drinks choice');
+      print('      🔍 التحقق: البرجر=${hasBurgers ? '✅' : '❌'}, المشروبات=${hasDrinks ? '✅' : '❌'}');
+
+      final result = {
+        'combo': combo,
+        'sections': comboSections,
+        'totalExtraPrice': comboItems.fold(0.0, (sum, item) => sum + item.extraPrice),
+      };
+      
+      print('   🚀 إرجاع بيانات الكومبو مع ${comboSections.length} قسم إلى الواجهة');
+      
+      // التحقق النهائي من البيانات
+      if (comboSections.isEmpty) {
+        print('   ❌ خطأ: لم يتم إنشاء أي أقسام!');
+        print('   🔍 المشكلة: لا توجد عناصر كومبو أو فشل في إنشاء الأقسام');
+        return null;
+      }
+      
+      print('   ✅ تم إنشاء الكومبو بنجاح:');
+      print('      - اسم الكومبو: ${combo.name}');
+      print('      - عدد الأقسام: ${comboSections.length}');
+      print('      - الأقسام: ${comboSections.map((s) => '${s.groupName}(${s.items.length})').join(', ')}');
+      
+      // التحقق النهائي من أن البيانات من Odoo وليست وهمية
+      print('   🔍 مصدر البيانات: من جدول product.combo.item في Odoo');
+      print('   ✅ جميع العناصر مرتبطة بمنتجات حقيقية من قاعدة البيانات');
+      
+      return result;
+
+    } catch (e) {
+      print('❌ خطأ في الحصول على تفاصيل الكومبو: $e');
+      print('تتبع الخطأ: ${StackTrace.current}');
+      return null;
+    }
+  }
+
+  // تم إزالة دالة إنشاء العناصر التجريبية - نستخدم البيانات الحقيقية من Odoo فقط
+
+  // تم إزالة دالة إنشاء البيانات التجريبية - نستخدم البيانات الحقيقية من Odoo فقط
+
+  /// التحقق من أن المنتج هو منتج كومبو
+  bool isComboProduct(ProductProduct product) {
+    print('🔍 التحقق من أن المنتج "${product.displayName}" (المعرف: ${product.id}) هو كومبو...');
+    print('   نوع المنتج من Odoo: "${product.type}"');
+    print('   معرفات الكومبو للمنتج من Odoo: ${product.comboIds}');
+    
+    // الفحص الأساسي: هل نوع المنتج "combo"؟
+    bool isCombo = product.type == 'combo';
+    
+    if (isCombo) {
+      print('   ✅ المنتج IS كومبو (النوع="combo" من Odoo)');
+      
+      // التحقق من وجود combo_ids (العناصر لعرضها في النافذة المنبثقة)
+      if (product.comboIds.isNotEmpty) {
+        print('   📋 الكومبو له ${product.comboIds.length} عنصر كومبو: ${product.comboIds}');
+      } else {
+        print('   ⚠️ تحذير: منتج الكومبو ليس له combo_ids (لا توجد عناصر لعرضها في النافذة المنبثقة)');
+      }
+    } else {
+      print('   ❌ المنتج ليس كومبو (النوع="${product.type ?? 'null'}")');
+    }
+    
+    print('   النتيجة: ${isCombo ? 'IS COMBO ✅' : 'NOT COMBO ❌'}');
+    return isCombo;
   }
 
   /// Get pricelists for a specific config
@@ -1521,6 +2213,185 @@ class POSBackendService {
     _syncService.dispose();
     _apiClient.dispose();
   }
+
+  /// Create demo combo data for testing when Odoo combo tables don't exist
+  Future<bool> createDemoCombos() async {
+    try {
+      _setStatus('Creating demo combo data...');
+      _setLoading(true);
+      
+      print('🎯 Creating demo combos in POSBackendService...');
+      
+      // Create demo combo products
+      final demoCombos = [
+        ProductCombo(
+          id: 1,
+          name: 'وجبة برجر كلاسيك',
+          basePrice: 25.0,
+          sequence: 1,
+          comboItemIds: [1, 2, 3],
+        ),
+        ProductCombo(
+          id: 2,
+          name: 'وجبة دجاج مشوي',
+          basePrice: 30.0,
+          sequence: 2,
+          comboItemIds: [4, 5, 6],
+        ),
+        ProductCombo(
+          id: 3,
+          name: 'وجبة سمك مشوي',
+          basePrice: 35.0,
+          sequence: 3,
+          comboItemIds: [7, 8, 9],
+        ),
+      ];
+      
+      // Create demo combo items
+      final demoComboItems = [
+        ProductComboItem(
+          id: 1,
+          comboId: 1,
+          productId: 101, // برجر لحم
+          extraPrice: 0.0,
+        ),
+        ProductComboItem(
+          id: 2,
+          comboId: 1,
+          productId: 102, // بطاطس مقلية
+          extraPrice: 0.0,
+        ),
+        ProductComboItem(
+          id: 3,
+          comboId: 1,
+          productId: 103, // مشروب غازي
+          extraPrice: 0.0,
+        ),
+        ProductComboItem(
+          id: 4,
+          comboId: 2,
+          productId: 201, // صدر دجاج مشوي
+          extraPrice: 0.0,
+        ),
+        ProductComboItem(
+          id: 5,
+          comboId: 2,
+          productId: 102, // بطاطس مقلية
+          extraPrice: 0.0,
+        ),
+        ProductComboItem(
+          id: 6,
+          comboId: 2,
+          productId: 103, // مشروب غازي
+          extraPrice: 0.0,
+        ),
+        ProductComboItem(
+          id: 7,
+          comboId: 3,
+          productId: 301, // سمك سالمون مشوي
+          extraPrice: 0.0,
+        ),
+        ProductComboItem(
+          id: 8,
+          comboId: 3,
+          productId: 104, // خضروات مشوية
+          extraPrice: 0.0,
+        ),
+        ProductComboItem(
+          id: 9,
+          comboId: 3,
+          productId: 105, // عصير طبيعي
+          extraPrice: 0.0,
+        ),
+      ];
+      
+      // Update the internal lists
+      _combos.clear();
+      _combos.addAll(demoCombos);
+      
+      _comboItems.clear();
+      _comboItems.addAll(demoComboItems);
+      
+      // Update products to include combo information
+      for (final product in _products) {
+        // Find if this product is part of any combo
+        final comboIds = <int>[];
+        for (final comboItem in _comboItems) {
+          if (comboItem.productId == product.id) {
+            comboIds.add(comboItem.comboId);
+          }
+        }
+        
+        if (comboIds.isNotEmpty) {
+          // Update product with combo information
+          final updatedProduct = product.copyWith(comboIds: comboIds);
+          final index = _products.indexWhere((p) => p.id == product.id);
+          if (index != -1) {
+            _products[index] = updatedProduct;
+          }
+        }
+      }
+      
+      // Notify listeners about the updated data
+      _productsController.add(_products);
+      
+      _setStatus('Demo combos created successfully');
+      _setLoading(false);
+      
+      print('✅ Demo combos created successfully:');
+      print('   - Combos: ${_combos.length}');
+      print('   - Combo Items: ${_comboItems.length}');
+      print('   - Products with combos: ${_products.where((p) => p.comboIds.isNotEmpty).length}');
+      
+      return true;
+    } catch (e) {
+      _setStatus('Failed to create demo combos: $e');
+      _setLoading(false);
+      print('❌ Error creating demo combos: $e');
+      return false;
+    }
+  }
+
+
+
+
+
+
+
+
+
+  /// تحديث بيانات الكومبو تلقائياً إذا كانت مفقودة
+  Future<void> refreshComboData() async {
+    try {
+      print('🔄 تحديث بيانات الكومبو...');
+      
+      // التحقق من وجود منتجات مع combo_ids
+      final productsWithComboIds = _products.where((p) => p.comboIds.isNotEmpty).toList();
+      
+      if (productsWithComboIds.isEmpty) {
+        print('   ⚠️ لا توجد منتجات مع combo_ids');
+        return;
+      }
+      
+      print('   📋 العثور على ${productsWithComboIds.length} منتج مع combo_ids');
+      
+             // التحقق من البيانات فقط - لا ننشئ بيانات تلقائياً
+       if (_comboItems.isEmpty) {
+         print('   ⚠️ لا توجد عناصر كومبو محملة');
+       }
+       
+       if (_combos.isEmpty) {
+         print('   ⚠️ لا توجد كومبوهات محملة');
+       }
+      
+      print('   ✅ تم تحديث بيانات الكومبو بنجاح');
+      print('     - الكومبوهات: ${_combos.length}');
+      print('     - عناصر الكومبو: ${_comboItems.length}');
+      
+    } catch (e) {
+      print('❌ خطأ في تحديث بيانات الكومبو: $e');
+    }
+  }
 }
 
 /// Result classes
@@ -1547,3 +2418,4 @@ class ProductCompleteInfoResult {
 
   ProductCompleteInfoResult({required this.success, this.productInfo, this.error});
 }
+

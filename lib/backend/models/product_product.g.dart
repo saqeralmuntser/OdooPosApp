@@ -23,6 +23,7 @@ ProductProduct _$ProductProductFromJson(Map<String, dynamic> json) =>
       freeQty: (json['free_qty'] as num?)?.toDouble() ?? 0.0,
       displayName: json['display_name'] as String,
       image128: _extractNullableString(json['image_128']),
+      type: _extractNullableString(json['type']),
       productTemplateVariantValueIds:
           (json['product_template_variant_value_ids'] as List<dynamic>?)
               ?.map((e) => (e as num).toInt())
@@ -71,9 +72,10 @@ Map<String, dynamic> _$ProductProductToJson(
   'incoming_qty': instance.incomingQty,
   'outgoing_qty': instance.outgoingQty,
   'free_qty': instance.freeQty,
-  'display_name': instance.displayName,
-  'image_128': instance.image128,
-  'product_template_variant_value_ids': instance.productTemplateVariantValueIds,
+        'display_name': instance.displayName,
+      'image_128': instance.image128,
+      'type': instance.type,
+      'product_template_variant_value_ids': instance.productTemplateVariantValueIds,
   'combo_ids': instance.comboIds,
   'packaging_ids': instance.packagingIds,
   'seller_ids': instance.sellerIds,

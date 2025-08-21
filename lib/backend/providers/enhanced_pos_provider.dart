@@ -17,6 +17,7 @@ import '../models/pos_payment.dart';
 import '../models/pos_payment_method.dart';
 import '../models/product_pricelist.dart';
 import '../models/product_pricelist_item.dart';
+import '../models/product_combo.dart';
 import '../services/pricing_service.dart';
 import '../services/printer_service.dart';
 import '../services/windows_printer_service.dart';
@@ -109,6 +110,10 @@ class EnhancedPOSProvider with ChangeNotifier {
   // Customers getters
   List<ResPartner> get customers => List.unmodifiable(_customers);
   ResPartner? get selectedCustomer => _selectedCustomer;
+
+  // Combo getters
+  List<ProductCombo> get combos => _backendService.combos;
+  List<ProductComboItem> get comboItems => _backendService.comboItems;
 
   // Payment methods getters
   List<POSPaymentMethod> get paymentMethods => List.unmodifiable(_paymentMethods);
@@ -375,6 +380,8 @@ class EnhancedPOSProvider with ChangeNotifier {
         print('  - Config: ${config.name} (ID: ${config.id})');
       }
       
+      // البيانات محملة من الخادم - لا حاجة لإنشاء بيانات تجريبية
+      
       // Notify listeners about the updated configs
       notifyListeners();
       
@@ -520,6 +527,8 @@ class EnhancedPOSProvider with ChangeNotifier {
       
       // Update pricelists from backend service
       _loadPricelists();
+      
+      // البيانات محملة من الجلسة - لا حاجة لإنشاء بيانات تجريبية
       
       // Force a UI update
       notifyListeners();
@@ -1073,6 +1082,41 @@ class EnhancedPOSProvider with ChangeNotifier {
       _availablePricelists = [];
       _currentPricelist = null;
     }
+  }
+
+  /// ========================
+  /// COMBO PRODUCT MANAGEMENT
+  /// ========================
+
+  /// Check if a product is a combo product
+  bool isComboProduct(ProductProduct product) {
+    // استخدام البيانات الحقيقية من Odoo فقط
+    return _backendService.isComboProduct(product);
+  }
+
+  /// Get combo details for a product
+  Future<Map<String, dynamic>?> getComboDetails(int productId) async {
+    try {
+      // استخدام البيانات الحقيقية من Odoo فقط
+      return await _backendService.getComboDetails(productId);
+    } catch (e) {
+      print('Error getting combo details: $e');
+      return null;
+    }
+  }
+
+  /// Get combo by ID
+  ProductCombo? getComboById(int comboId) {
+    try {
+      return _backendService.combos.firstWhere((combo) => combo.id == comboId);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Get combo items for a specific combo
+  List<ProductComboItem> getComboItems(int comboId) {
+    return _backendService.comboItems.where((item) => item.comboId == comboId).toList();
   }
 
   /// ========================
@@ -1754,6 +1798,40 @@ class EnhancedPOSProvider with ChangeNotifier {
   Stream<List<dynamic>> get printJobsStream => _printerService.jobsStream;
   Stream<String> get printerDiscoveryStatusStream => _printerService.discoveryStatusStream;
   Stream<String> get printQueueStatusStream => _printerService.queueStatusStream;
+
+  /// Create demo combo data for testing when Odoo combo tables don't exist
+  Future<bool> createDemoCombos() async {
+    try {
+      print('🎯 Creating demo combos via provider...');
+      await _backendService.createDemoCombos();
+      
+      // Force refresh products to pick up updated combo data
+      notifyListeners();
+      
+      print('✅ Demo combos created successfully');
+      return true;
+    } catch (e) {
+      print('❌ Error creating demo combos: $e');
+      return false;
+    }
+  }
+
+  /// Refresh combo data automatically when needed
+  Future<bool> refreshComboData() async {
+    try {
+      print('🔄 Refreshing combo data via provider...');
+      await _backendService.refreshComboData();
+      
+      // Force refresh to pick up updated combo data
+      notifyListeners();
+      
+      print('✅ Combo data refreshed successfully');
+      return true;
+    } catch (e) {
+      print('❌ Error refreshing combo data: $e');
+      return false;
+    }
+  }
 
   void _safeNotifyListeners() {
     if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
